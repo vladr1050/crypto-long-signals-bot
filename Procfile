@@ -1,1 +1,1 @@
-worker: pip install -r requirements-railway.txt && python -m app.main
+worker: pip install -r requirements-railway.txt && python setup_db.py && python -m app.main
