@@ -2,12 +2,21 @@
 """
 Test script to verify the bot setup
 """
+import os
 import sys
 import asyncio
 from pathlib import Path
 
 # Add app directory to path
 sys.path.insert(0, str(Path(__file__).parent / "app"))
+
+# Set test environment variables
+os.environ["BOT_TOKEN"] = "123456:ABC"
+os.environ["DATABASE_URL"] = "postgresql+asyncpg://user:pass@host:port/db"
+os.environ["EXCHANGE"] = "binance"
+os.environ["SCAN_INTERVAL_SEC"] = "180"
+os.environ["DEFAULT_RISK_PCT"] = "0.7"
+os.environ["DEFAULT_PAIRS"] = "ETH/USDC,BNB/USDC,XRP/USDC,SOL/USDC,ADA/USDC"
 
 async def test_imports():
     """Test that all modules can be imported"""

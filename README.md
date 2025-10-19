@@ -40,6 +40,7 @@ python3.12 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 cp env.example .env
+# Edit .env with your actual BOT_TOKEN and DATABASE_URL
 ```
 
 ### 2. Create Telegram Bot
@@ -150,7 +151,10 @@ make deploy
 
 ### Testing
 ```bash
-# Run with mock data
+# Test setup and dependencies
+python3 test_setup.py
+
+# Run with mock data (if implemented)
 python -m app.main --mock
 ```
 

@@ -3,7 +3,8 @@ Application configuration settings
 """
 import os
 from typing import List
-from pydantic import BaseSettings, Field
+from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -68,3 +69,7 @@ def get_settings() -> Settings:
     if _settings is None:
         _settings = Settings()
     return _settings
+
+
+# Create a global settings instance for easier access
+settings = get_settings()

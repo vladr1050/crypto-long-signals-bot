@@ -53,7 +53,7 @@ DEFAULT_PAIRS=ETH/USDC,BNB/USDC,XRP/USDC,SOL/USDC,ADA/USDC
 In Railway dashboard:
 1. Go to your service
 2. Click "Settings" tab
-3. Set **Start Command** to: `python -m app.main`
+3. Set **Start Command** to: `pip install -r requirements-railway.txt && python -m app.main`
 
 ## Step 6: Deploy
 

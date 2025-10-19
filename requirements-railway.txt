@@ -1,3 +1,4 @@
+# Railway-optimized requirements for Python 3.12+
 aiogram==3.4.1
 sqlalchemy[asyncio]==2.0.23
 asyncpg==0.29.0
