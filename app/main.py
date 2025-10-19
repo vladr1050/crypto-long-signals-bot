@@ -82,7 +82,22 @@ async def main():
     
     # Initialize database
     db_repo = DatabaseRepository(settings.database_url)
-    await db_repo.initialize()
+    try:
+        await db_repo.initialize()
+        logger.info("✅ Database initialized successfully")
+    except Exception as e:
+        logger.error(f"❌ Database initialization failed: {e}")
+        # Try to create tables manually
+        try:
+            from app.db.models import Base
+            from sqlalchemy.ext.asyncio import create_async_engine
+            engine = create_async_engine(settings.database_url)
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("✅ Database tables created manually")
+        except Exception as e2:
+            logger.error(f"❌ Manual table creation failed: {e2}")
+            raise
     
     # Register handlers
     register_handlers(dp)
