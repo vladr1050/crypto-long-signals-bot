@@ -11,7 +11,7 @@ from ...core.data.market import now_utc
 
 router = Router()
 
-@router.message(Command("start")))
+@router.message(Command("start"))
 async def start_cmd(m: Message, repo: Repo):
     # upsert user
     async with repo.Session() as s:
