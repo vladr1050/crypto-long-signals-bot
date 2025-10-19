@@ -3,6 +3,7 @@ SQLAlchemy[asyncio]==2.0.36
 asyncpg==0.30.0
 ccxt==4.4.60
 APScheduler==3.10.4
-pydantic==2.8.2
+pydantic==2.8
 pydantic-settings==2.6.1
 python-dotenv==1.0.1
+python==3.12.6
