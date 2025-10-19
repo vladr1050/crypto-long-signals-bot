@@ -87,8 +87,8 @@ async def main():
     # Register handlers
     register_handlers(dp)
     
-    # Store dependencies in bot data
-    bot["db_repo"] = db_repo
+    # Store dependencies in dispatcher data
+    dp["db_repo"] = db_repo
     
     # Start bot with lifespan
     async with lifespan():

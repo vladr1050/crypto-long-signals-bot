@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent / "app"))
 
 # Set test environment variables
 os.environ["BOT_TOKEN"] = "123456:ABC"
-os.environ["DATABASE_URL"] = "postgresql+asyncpg://user:pass@host:port/db"
+os.environ["DATABASE_URL"] = "postgresql+asyncpg://user:pass@localhost:5432/testdb"
 os.environ["EXCHANGE"] = "binance"
 os.environ["SCAN_INTERVAL_SEC"] = "180"
 os.environ["DEFAULT_RISK_PCT"] = "0.7"
