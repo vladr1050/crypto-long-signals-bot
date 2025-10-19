@@ -1,48 +1,87 @@
+"""
+Database models for Crypto Long Signals Bot
+"""
 from datetime import datetime
-from sqlalchemy.orm import declarative_base, Mapped, mapped_column
-from sqlalchemy import BigInteger, String, Float, Boolean, DateTime, Integer
+from enum import Enum
+from typing import Optional
+
+from sqlalchemy import (
+    BigInteger, Boolean, Column, DateTime, Float, Integer, 
+    String, Text, create_engine
+)
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
 Base = declarative_base()
 
+
+class SignalStatus(str, Enum):
+    """Signal status enumeration"""
+    PENDING = "pending"
+    ACTIVE = "active"
+    TRIGGERED = "triggered"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
+class SignalGrade(str, Enum):
+    """Signal grade enumeration"""
+    A = "A"  # Strong
+    B = "B"  # Good
+    C = "C"  # High-risk
+
+
 class User(Base):
+    """User model"""
     __tablename__ = "users"
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    tg_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
-    lang: Mapped[str | None] = mapped_column(String(8), default="en")
-    risk_pct: Mapped[float] = mapped_column(Float, default=0.7)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    id = Column(Integer, primary_key=True, index=True)
+    tg_id = Column(BigInteger, unique=True, index=True, nullable=False)
+    lang = Column(String(5), default="en")
+    risk_pct = Column(Float, default=0.7)
+    signals_enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 
 class Pair(Base):
+    """Trading pair model"""
     __tablename__ = "pairs"
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    symbol: Mapped[str] = mapped_column(String(32), unique=True, index=True)
-    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    id = Column(Integer, primary_key=True, index=True)
+    symbol = Column(String(20), unique=True, index=True, nullable=False)
+    enabled = Column(Boolean, default=True)
+    added_at = Column(DateTime, default=datetime.utcnow)
+
 
 class Signal(Base):
+    """Signal model"""
     __tablename__ = "signals"
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    symbol: Mapped[str] = mapped_column(String(32), index=True)
-    timeframe: Mapped[str] = mapped_column(String(8))  # "15m" or "5m"
-    entry: Mapped[float] = mapped_column(Float)
-    sl: Mapped[float] = mapped_column(Float)
-    tp1: Mapped[float] = mapped_column(Float)
-    tp2: Mapped[float] = mapped_column(Float)
-    grade: Mapped[str] = mapped_column(String(1))  # A/B/C
-    risk_level: Mapped[str] = mapped_column(String(16))  # "Strong/Good/High"
-    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
-    status: Mapped[str] = mapped_column(String(16), default="new")  # new/sent/expired
-    reason: Mapped[str | None] = mapped_column(String(512), default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    id = Column(Integer, primary_key=True, index=True)
+    symbol = Column(String(20), nullable=False, index=True)
+    timeframe = Column(String(10), nullable=False)
+    entry_price = Column(Float, nullable=False)
+    stop_loss = Column(Float, nullable=False)
+    take_profit_1 = Column(Float, nullable=False)
+    take_profit_2 = Column(Float, nullable=False)
+    grade = Column(String(1), nullable=False)  # A, B, C
+    risk_level = Column(Float, nullable=False)  # Risk percentage
+    reason = Column(Text, nullable=True)
+    status = Column(String(20), default=SignalStatus.PENDING)
+    expires_at = Column(DateTime, nullable=False)
+    triggered_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 
 class Setting(Base):
+    """Application settings model"""
     __tablename__ = "settings"
-    key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    value: Mapped[str] = mapped_column(String(256))
-
-class AppState(Base):
-    __tablename__ = "app_state"
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    signals_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
-    max_concurrent: Mapped[int] = mapped_column(Integer, default=3)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(50), unique=True, nullable=False)
+    value = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

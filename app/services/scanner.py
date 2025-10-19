@@ -1,79 +1,251 @@
-from __future__ import annotations
-from datetime import timedelta
-from typing import Iterable
+"""
+Market scanner service for detecting trading signals
+"""
+import asyncio
+import logging
+from datetime import datetime, timedelta
+from typing import Dict, List
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 
-from ..config.settings import settings
-from ..db.repo import Repo
-from ..db.models import Signal
-from ..core.data.market import make_exchange, fetch_ohlcv, now_utc
-from ..core.signals.detector import CandleData, conservative_long_signal
-from .notifier import Notifier
+from app.config.settings import get_settings
+from app.core.data.market import MarketDataService
+from app.core.signals.detector import SignalDetector
+from app.services.notifier import NotificationService
+
+logger = logging.getLogger(__name__)
 
 
-class Scanner:
-    def __init__(self, repo: Repo, notifier: Notifier, chat_ids_provider):
-        self.repo = repo
+class MarketScanner:
+    """Market scanner for detecting trading signals"""
+    
+    def __init__(
+        self, 
+        db_repo, 
+        market_data: MarketDataService, 
+        signal_detector: SignalDetector,
+        notifier: NotificationService,
+        settings
+    ):
+        self.db_repo = db_repo
+        self.market_data = market_data
+        self.signal_detector = signal_detector
         self.notifier = notifier
+        self.settings = settings
+        
+        # Initialize scheduler
         self.scheduler = AsyncIOScheduler()
-        self.chat_ids_provider = chat_ids_provider  # callable -> list[int]
-        self.exchange = make_exchange(
-            settings.exchange,
-            settings.binance_api_key,
-            settings.binance_api_secret
-        )
-
-    def start(self):
-        self.scheduler.add_job(self.scan_market, "interval", seconds=settings.scan_interval_sec)
-        self.scheduler.start()
-
-    async def scan_market(self):
-        state = await self.repo.get_state()
-        if not state or not state.signals_enabled:
-            return
-
-        pairs = [p.symbol for p in await self.repo.list_pairs() if p.enabled]
-        if not pairs:
-            return
-
-        # simple concurrency limit by active signals
-        if await self.repo.recent_active_count() >= state.max_concurrent:
-            return
-
-        for symbol in pairs:
-            try:
-                c1h = _load_cd(self.exchange, symbol, "1h")
-                c15 = _load_cd(self.exchange, symbol, "15m")
-                c5  = _load_cd(self.exchange, symbol, "5m")
-            except Exception:
-                continue
-
-            idea = conservative_long_signal(c15, c5, c1h)
-            if not idea:
-                continue
-
-            expires_at = now_utc() + timedelta(hours=6)
-            sig = Signal(
-                symbol=symbol, timeframe="15m",
-                entry=idea.entry, sl=idea.sl, tp1=idea.tp1, tp2=idea.tp2,
-                grade=idea.grade, risk_level=idea.risk_text, expires_at=expires_at,
-                status="new", reason=idea.reason
+        self.is_running = False
+        
+        # Statistics
+        self.scan_count = 0
+        self.signals_generated = 0
+        self.last_scan_time = None
+    
+    async def start(self):
+        """Start the market scanner"""
+        try:
+            if self.is_running:
+                logger.warning("Scanner is already running")
+                return
+            
+            # Schedule scanning job
+            self.scheduler.add_job(
+                self._scan_markets,
+                trigger=IntervalTrigger(seconds=self.settings.scan_interval_sec),
+                id="market_scanner",
+                replace_existing=True
             )
-            signal_id = await self.repo.add_signal(sig)
-
-            # broadcast
-            chat_ids = await self.chat_ids_provider()
-            payload = dict(
-                symbol=symbol, timeframe="15m",
-                entry=idea.entry, sl=idea.sl, tp1=idea.tp1, tp2=idea.tp2,
-                grade=idea.grade, risk=idea.risk_text, hours=6, reason=idea.reason
-            )
-            await self.notifier.broadcast_signal(chat_ids, payload, signal_id)
-
-
-def _load_cd(exchange, symbol: str, tf: str) -> CandleData:
-    rows = fetch_ohlcv(exchange, symbol, tf, limit=300)
-    ts, o, h, l, c, v = ([], [], [], [], [], [])
-    for r in rows:
-        ts.append(int(r[0])); o.append(float(r[1])); h.append(float(r[2])); l.append(float(r[3])); c.append(float(r[4])); v.append(float(r[5]))
-    return CandleData(ts=ts, o=o, h=h, l=l, c=c, v=v)
+            
+            # Start scheduler
+            self.scheduler.start()
+            self.is_running = True
+            
+            # Run initial scan
+            await self._scan_markets()
+            
+            logger.info("🚀 Market scanner started successfully")
+            
+        except Exception as e:
+            logger.error(f"Error starting market scanner: {e}")
+            raise
+    
+    async def stop(self):
+        """Stop the market scanner"""
+        try:
+            if not self.is_running:
+                return
+            
+            self.scheduler.shutdown()
+            self.is_running = False
+            
+            logger.info("🛑 Market scanner stopped")
+            
+        except Exception as e:
+            logger.error(f"Error stopping market scanner: {e}")
+    
+    async def _scan_markets(self):
+        """Scan markets for trading signals"""
+        try:
+            self.scan_count += 1
+            self.last_scan_time = datetime.utcnow()
+            
+            logger.info(f"🔍 Starting market scan #{self.scan_count}")
+            
+            # Get enabled pairs
+            pairs = await self.db_repo.get_enabled_pairs()
+            if not pairs:
+                logger.warning("No enabled pairs found")
+                return
+            
+            # Get active signals to avoid duplicates
+            active_signals = await self.db_repo.get_active_signals()
+            active_symbols = {signal.symbol for signal in active_signals}
+            
+            # Prepare symbols list
+            symbols = [pair.symbol for pair in pairs if pair.symbol not in active_symbols]
+            
+            if not symbols:
+                logger.info("All pairs have active signals, skipping scan")
+                return
+            
+            # Required timeframes
+            timeframes = [
+                self.settings.trend_timeframe,
+                self.settings.entry_timeframe,
+                self.settings.confirmation_timeframe
+            ]
+            
+            # Fetch market data for all symbols and timeframes
+            logger.info(f"Fetching data for {len(symbols)} symbols")
+            market_data = await self.market_data.get_multiple_ohlcv(symbols, timeframes)
+            
+            # Detect signals
+            signals = self.signal_detector.detect_signals(market_data)
+            
+            if signals:
+                logger.info(f"🎯 Detected {len(signals)} signals")
+                await self._process_signals(signals)
+            else:
+                logger.info("No signals detected in this scan")
+            
+            # Clean up expired signals
+            await self._cleanup_expired_signals()
+            
+            logger.info(f"✅ Scan #{self.scan_count} completed")
+            
+        except Exception as e:
+            logger.error(f"Error in market scan: {e}")
+    
+    async def _process_signals(self, signals: List[Dict]):
+        """Process detected signals"""
+        try:
+            for signal_data in signals:
+                # Check if we should generate this signal
+                current_signals = await self.db_repo.get_active_signals()
+                if not self.signal_detector.should_generate_signal(signal_data['symbol'], current_signals):
+                    continue
+                
+                # Create signal in database
+                signal = await self.db_repo.create_signal(
+                    symbol=signal_data['symbol'],
+                    timeframe=signal_data['timeframe'],
+                    entry_price=signal_data['entry_price'],
+                    stop_loss=signal_data['stop_loss'],
+                    take_profit_1=signal_data['take_profit_1'],
+                    take_profit_2=signal_data['take_profit_2'],
+                    grade=signal_data['grade'],
+                    risk_level=signal_data['risk_level'],
+                    reason=signal_data['reason'],
+                    expires_at=signal_data['expires_at']
+                )
+                
+                # Add signal ID to data for notifications
+                signal_data['id'] = signal.id
+                
+                # Log signal
+                logger.info(
+                    f"Signal created: {signal.symbol} {signal.grade} "
+                    f"Entry: {signal.entry_price} SL: {signal.stop_loss} "
+                    f"TP1: {signal.take_profit_1} TP2: {signal.take_profit_2}"
+                )
+                
+                self.signals_generated += 1
+            
+        except Exception as e:
+            logger.error(f"Error processing signals: {e}")
+    
+    async def _cleanup_expired_signals(self):
+        """Clean up expired signals"""
+        try:
+            expired_count = await self.db_repo.expire_old_signals()
+            if expired_count > 0:
+                logger.info(f"Expired {expired_count} old signals")
+                
+        except Exception as e:
+            logger.error(f"Error cleaning up expired signals: {e}")
+    
+    async def get_scanner_status(self) -> Dict:
+        """Get scanner status information"""
+        try:
+            return {
+                'is_running': self.is_running,
+                'scan_count': self.scan_count,
+                'signals_generated': self.signals_generated,
+                'last_scan_time': self.last_scan_time,
+                'scan_interval_sec': self.settings.scan_interval_sec,
+                'enabled_pairs': len(await self.db_repo.get_enabled_pairs()),
+                'active_signals': len(await self.db_repo.get_active_signals())
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting scanner status: {e}")
+            return {
+                'is_running': False,
+                'error': str(e)
+            }
+    
+    async def force_scan(self) -> Dict:
+        """Force an immediate market scan"""
+        try:
+            logger.info("🔄 Forcing immediate market scan")
+            await self._scan_markets()
+            
+            return {
+                'success': True,
+                'message': f"Scan completed. Generated {self.signals_generated} signals total."
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in force scan: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    async def get_scan_statistics(self) -> Dict:
+        """Get detailed scan statistics"""
+        try:
+            active_signals = await self.db_repo.get_active_signals()
+            enabled_pairs = await self.db_repo.get_enabled_pairs()
+            
+            # Calculate signal distribution by grade
+            grade_distribution = {}
+            for signal in active_signals:
+                grade = signal.grade
+                grade_distribution[grade] = grade_distribution.get(grade, 0) + 1
+            
+            return {
+                'total_scans': self.scan_count,
+                'total_signals_generated': self.signals_generated,
+                'active_signals': len(active_signals),
+                'enabled_pairs': len(enabled_pairs),
+                'grade_distribution': grade_distribution,
+                'last_scan': self.last_scan_time.isoformat() if self.last_scan_time else None,
+                'scanner_running': self.is_running
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting scan statistics: {e}")
+            return {'error': str(e)}

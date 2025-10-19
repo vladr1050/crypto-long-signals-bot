@@ -1,91 +1,464 @@
-from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
-from aiogram.filters import Command
-from sqlalchemy import select
-from datetime import timedelta
-from ...db.repo import Repo
-from ...db.models import User, Signal
-from ..texts_en import WELCOME, STRATEGY
-from ...services.notifier import Notifier
-from ...core.data.market import now_utc
+"""
+Basic message handlers for the Telegram bot
+"""
+import logging
+from datetime import datetime
+from typing import List
 
+from aiogram import Router, F, Bot
+from aiogram.filters import Command, CommandStart
+from aiogram.types import CallbackQuery, Message
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
+from app.bot.keyboards.common import (
+    get_back_keyboard, get_help_keyboard, get_main_menu_keyboard,
+    get_pairs_management_keyboard, get_risk_keyboard, get_signal_keyboard
+)
+from app.bot.texts_en import *
+from app.db.repo import DatabaseRepository
+from app.config.settings import get_settings
+
+logger = logging.getLogger(__name__)
 router = Router()
 
-@router.message(Command("start"))
-async def start_cmd(m: Message, repo: Repo):
-    # upsert user
-    async with repo.Session() as s:
-        u = (await s.scalars(select(User).where(User.tg_id == m.from_user.id))).first()
-        if not u:
-            s.add(User(tg_id=m.from_user.id, lang="en"))
-            await s.commit()
-    await m.answer(WELCOME)
+
+class RiskState(StatesGroup):
+    """State for risk input"""
+    waiting_for_risk = State()
+
+
+class PairState(StatesGroup):
+    """State for pair input"""
+    waiting_for_pair = State()
+
+
+def get_db_repo(bot: Bot):
+    """Get database repository from bot data"""
+    return bot["db_repo"]
+
+
+@router.message(CommandStart())
+async def cmd_start(message: Message, bot: Bot):
+    """Handle /start command"""
+    try:
+        # Get database repository from bot data
+        db_repo = bot["db_repo"]
+        
+        # Get or create user
+        user = await db_repo.get_or_create_user(message.from_user.id)
+        
+        await message.answer(
+            WELCOME_MESSAGE,
+            reply_markup=get_main_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        logger.info(f"User {message.from_user.id} started the bot")
+        
+    except Exception as e:
+        logger.error(f"Error in start command: {e}")
+        await message.answer(ERROR_GENERIC)
+
 
 @router.message(Command("help"))
-async def help_cmd(m: Message):
-    await m.answer(STRATEGY)
+async def cmd_help(message: Message):
+    """Handle /help command"""
+    await message.answer(
+        HELP_MESSAGE,
+        reply_markup=get_help_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(Command("strategy"))
-async def strategy_cmd(m: Message):
-    await m.answer(STRATEGY)
+async def cmd_strategy(message: Message):
+    """Handle /strategy command"""
+    await message.answer(
+        STRATEGY_MESSAGE,
+        reply_markup=get_back_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(Command("status"))
-async def status_cmd(m: Message, repo: Repo):
-    st = await repo.get_state()
-    onoff = "ON ✅" if (st and st.signals_enabled) else "OFF ⏸"
-    pairs = ", ".join(p.symbol for p in await repo.list_pairs() if p.enabled)
-    await m.answer(f"Status: <b>{onoff}</b>\nPairs: {pairs}", parse_mode="HTML")
-
-
-@router.message(Command("signals_on"))
-async def signals_on(m: Message, repo: Repo):
-    await repo.set_signals_enabled(True)
-    await m.answer("Signals: ON ✅")
-
-
-@router.message(Command("signals_off"))
-async def signals_off(m: Message, repo: Repo):
-    await repo.set_signals_enabled(False)
-    await m.answer("Signals: OFF ⏸")
+async def cmd_status(message: Message, bot: Bot):
+    """Handle /status command"""
+    try:
+        # Get database repository
+        db_repo = get_db_repo(bot)
+        
+        # Get user info
+        user = await db_repo.get_or_create_user(message.from_user.id)
+        
+        # Get pairs
+        pairs = await db_repo.get_enabled_pairs()
+        pairs_text = ", ".join([p.symbol for p in pairs])
+        
+        # Get active signals count
+        signals_count = await db_repo.get_signals_count()
+        
+        # Build status message
+        status_text = STATUS_HEADER
+        status_text += SIGNALS_ENABLED if user.signals_enabled else SIGNALS_DISABLED
+        status_text += f"\n{SCANNING_PAIRS.format(pairs=pairs_text)}"
+        status_text += f"\n{ACTIVE_SIGNALS.format(count=signals_count)}"
+        status_text += f"\n{RISK_SETTING.format(risk=user.risk_pct)}"
+        status_text += f"\n{LAST_SCAN.format(time=datetime.now().strftime('%H:%M:%S'))}"
+        
+        await message.answer(
+            status_text,
+            reply_markup=get_main_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in status command: {e}")
+        await message.answer(ERROR_GENERIC)
 
 
 @router.message(Command("pairs"))
-async def pairs_cmd(m: Message, repo: Repo):
-    pairs = await repo.list_pairs()
-    lines = [f"{'✅' if p.enabled else '❌'} {p.symbol}" for p in pairs]
-    await m.answer("Pairs:\n" + "\n".join(lines))
+async def cmd_pairs(message: Message, bot: Bot):
+    """Handle /pairs command"""
+    try:
+        # Get database repository
+        db_repo = get_db_repo(bot)
+        
+        pairs = await db_repo.get_all_pairs()
+        
+        await message.answer(
+            PAIRS_HEADER,
+            reply_markup=get_pairs_management_keyboard(pairs),
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in pairs command: {e}")
+        await message.answer(ERROR_GENERIC)
 
 
 @router.message(Command("risk"))
-async def risk_cmd(m: Message):
-    await m.answer("Default risk per trade is set by the bot owner (e.g., 0.7%).\n"
-                   "Personalized per-user risk can be added later.")
+async def cmd_risk(message: Message, bot: Bot):
+    """Handle /risk command"""
+    try:
+        # Get database repository
+        db_repo = get_db_repo(bot)
+        
+        user = await db_repo.get_or_create_user(message.from_user.id)
+        
+        await message.answer(
+            f"{RISK_HEADER}{CURRENT_RISK.format(risk=user.risk_pct)}",
+            reply_markup=get_risk_keyboard(user.risk_pct),
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in risk command: {e}")
+        await message.answer(ERROR_GENERIC)
 
 
-@router.callback_query(F.data.startswith("sig:"))
-async def sig_cb(q: CallbackQuery):
-    action = q.data.split(":", 1)[1]
-    msg = {"active": "Marked active ✅", "snooze": "Snoozed for 1h 😴", "mute": "Pair muted 🔇",
-           "explain": "Signal explained in the message above."}.get(action, "OK")
-    await q.answer(msg, show_alert=False)
+@router.message(Command("signals_on"))
+async def cmd_signals_on(message: Message, bot: Bot):
+    """Handle /signals_on command"""
+    try:
+        # Get database repository
+        db_repo = get_db_repo(bot)
+        
+        enabled = await db_repo.toggle_user_signals(message.from_user.id)
+        
+        if enabled:
+            await message.answer(
+                SUCCESS_SIGNAL_ENABLED,
+                reply_markup=get_main_menu_keyboard()
+            )
+        else:
+            await message.answer(ERROR_GENERIC)
+            
+    except Exception as e:
+        logger.error(f"Error in signals_on command: {e}")
+        await message.answer(ERROR_GENERIC)
 
-@router.message(Command("mock_signal"))
-async def mock_signal(m: Message, repo: Repo):
-    expires_at = now_utc() + timedelta(hours=6)
-    sig = Signal(
-        symbol="ETH/USDC", timeframe="15m",
-        entry=2650.0, sl=2615.0, tp1=2676.0, tp2=2702.0,
-        grade="A", risk_level="Strong", expires_at=expires_at,
-        status="new", reason="test: mock signal"
+
+@router.message(Command("signals_off"))
+async def cmd_signals_off(message: Message, bot: Bot):
+    """Handle /signals_off command"""
+    try:
+        # Get database repository
+        db_repo = get_db_repo(bot)
+        
+        enabled = await db_repo.toggle_user_signals(message.from_user.id)
+        
+        if not enabled:
+            await message.answer(
+                SUCCESS_SIGNAL_DISABLED,
+                reply_markup=get_main_menu_keyboard()
+            )
+        else:
+            await message.answer(ERROR_GENERIC)
+            
+    except Exception as e:
+        logger.error(f"Error in signals_off command: {e}")
+        await message.answer(ERROR_GENERIC)
+
+
+# Callback query handlers
+@router.callback_query(F.data == "main_menu")
+async def callback_main_menu(callback: CallbackQuery):
+    """Handle main menu callback"""
+    await callback.message.edit_text(
+        WELCOME_MESSAGE,
+        reply_markup=get_main_menu_keyboard(),
+        parse_mode="HTML"
     )
-    signal_id = await repo.add_signal(sig)
+    await callback.answer()
 
-    from app.bot.texts_en import render_signal
-    text = render_signal(
-        symbol="ETH/USDC", timeframe="15m",
-        entry=2650.0, sl=2615.0, tp1=2676.0, tp2=2702.0,
-        grade="A", risk="Strong", hours=6, reason="test: mock signal"
+
+@router.callback_query(F.data == "show_help")
+async def callback_show_help(callback: CallbackQuery):
+    """Handle show help callback"""
+    await callback.message.edit_text(
+        HELP_MESSAGE,
+        reply_markup=get_help_keyboard(),
+        parse_mode="HTML"
     )
-    await m.answer(text, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "show_strategy")
+async def callback_show_strategy(callback: CallbackQuery):
+    """Handle show strategy callback"""
+    await callback.message.edit_text(
+        STRATEGY_MESSAGE,
+        reply_markup=get_back_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "show_status")
+async def callback_show_status(callback: CallbackQuery, bot: Bot):
+    """Handle show status callback"""
+    try:
+        # Get database repository
+        db_repo = get_db_repo(bot)
+        
+        # Get user info
+        user = await db_repo.get_or_create_user(callback.from_user.id)
+        
+        # Get pairs
+        pairs = await db_repo.get_enabled_pairs()
+        pairs_text = ", ".join([p.symbol for p in pairs])
+        
+        # Get active signals count
+        signals_count = await db_repo.get_signals_count()
+        
+        # Build status message
+        status_text = STATUS_HEADER
+        status_text += SIGNALS_ENABLED if user.signals_enabled else SIGNALS_DISABLED
+        status_text += f"\n{SCANNING_PAIRS.format(pairs=pairs_text)}"
+        status_text += f"\n{ACTIVE_SIGNALS.format(count=signals_count)}"
+        status_text += f"\n{RISK_SETTING.format(risk=user.risk_pct)}"
+        status_text += f"\n{LAST_SCAN.format(time=datetime.now().strftime('%H:%M:%S'))}"
+        
+        await callback.message.edit_text(
+            status_text,
+            reply_markup=get_main_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Error in show status callback: {e}")
+        await callback.answer(ERROR_GENERIC)
+
+
+@router.callback_query(F.data == "manage_pairs")
+async def callback_manage_pairs(callback: CallbackQuery, bot: Bot):
+    """Handle manage pairs callback"""
+    try:
+        # Get database repository
+        db_repo = get_db_repo(bot)
+        
+        pairs = await db_repo.get_all_pairs()
+        
+        await callback.message.edit_text(
+            PAIRS_HEADER,
+            reply_markup=get_pairs_management_keyboard(pairs),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Error in manage pairs callback: {e}")
+        await callback.answer(ERROR_GENERIC)
+
+
+@router.callback_query(F.data == "set_risk")
+async def callback_set_risk(callback: CallbackQuery, bot: Bot):
+    """Handle set risk callback"""
+    try:
+        # Get database repository
+        db_repo = get_db_repo(bot)
+        
+        user = await db_repo.get_or_create_user(callback.from_user.id)
+        
+        await callback.message.edit_text(
+            f"{RISK_HEADER}{CURRENT_RISK.format(risk=user.risk_pct)}",
+            reply_markup=get_risk_keyboard(user.risk_pct),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Error in set risk callback: {e}")
+        await callback.answer(ERROR_GENERIC)
+
+
+@router.callback_query(F.data.startswith("set_risk:"))
+async def callback_set_risk_value(callback: CallbackQuery, bot: Bot):
+    """Handle set risk value callback"""
+    try:
+        risk_value = float(callback.data.split(":")[1])
+        
+        # Validate risk value
+        if not (0.1 <= risk_value <= 5.0):
+            await callback.answer(RISK_INVALID)
+            return
+        
+        # Get database repository
+        db_repo = get_db_repo(bot)
+        
+        # Update user risk
+        success = await db_repo.update_user_risk(callback.from_user.id, risk_value)
+        
+        if success:
+            await callback.answer(f"Risk updated to {risk_value}%")
+            # Refresh the risk keyboard
+            await callback.message.edit_text(
+                f"{RISK_HEADER}{CURRENT_RISK.format(risk=risk_value)}",
+                reply_markup=get_risk_keyboard(risk_value),
+                parse_mode="HTML"
+            )
+        else:
+            await callback.answer(ERROR_GENERIC)
+            
+    except Exception as e:
+        logger.error(f"Error in set risk value callback: {e}")
+        await callback.answer(ERROR_GENERIC)
+
+
+@router.callback_query(F.data.startswith("toggle_pair:"))
+async def callback_toggle_pair(callback: CallbackQuery, bot: Bot):
+    """Handle toggle pair callback"""
+    try:
+        # Get database repository
+        db_repo = get_db_repo(bot)
+        
+        symbol = callback.data.split(":")[1]
+        enabled = await db_repo.toggle_pair(symbol)
+        
+        status = "enabled" if enabled else "disabled"
+        await callback.answer(f"Pair {symbol} {status}")
+        
+        # Refresh pairs list
+        pairs = await db_repo.get_all_pairs()
+        await callback.message.edit_text(
+            PAIRS_HEADER,
+            reply_markup=get_pairs_management_keyboard(pairs),
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in toggle pair callback: {e}")
+        await callback.answer(ERROR_GENERIC)
+
+
+@router.callback_query(F.data == "add_pair")
+async def callback_add_pair(callback: CallbackQuery, state: FSMContext):
+    """Handle add pair callback"""
+    await callback.message.edit_text(
+        ADD_PAIR_PROMPT,
+        reply_markup=get_back_keyboard(),
+        parse_mode="HTML"
+    )
+    await state.set_state(PairState.waiting_for_pair)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "enable_signals")
+async def callback_enable_signals(callback: CallbackQuery, bot: Bot):
+    """Handle enable signals callback"""
+    try:
+        # Get database repository
+        db_repo = get_db_repo(bot)
+        
+        enabled = await db_repo.toggle_user_signals(callback.from_user.id)
+        
+        if enabled:
+            await callback.answer(SUCCESS_SIGNAL_ENABLED)
+        else:
+            await callback.answer(ERROR_GENERIC)
+            
+    except Exception as e:
+        logger.error(f"Error in enable signals callback: {e}")
+        await callback.answer(ERROR_GENERIC)
+
+
+@router.callback_query(F.data == "disable_signals")
+async def callback_disable_signals(callback: CallbackQuery, bot: Bot):
+    """Handle disable signals callback"""
+    try:
+        # Get database repository
+        db_repo = get_db_repo(bot)
+        
+        enabled = await db_repo.toggle_user_signals(callback.from_user.id)
+        
+        if not enabled:
+            await callback.answer(SUCCESS_SIGNAL_DISABLED)
+        else:
+            await callback.answer(ERROR_GENERIC)
+            
+    except Exception as e:
+        logger.error(f"Error in disable signals callback: {e}")
+        await callback.answer(ERROR_GENERIC)
+
+
+# State handlers
+@router.message(PairState.waiting_for_pair)
+async def handle_pair_input(message: Message, state: FSMContext, bot: Bot):
+    """Handle pair input from user"""
+    try:
+        symbol = message.text.strip().upper()
+        
+        # Add /USDC if not present
+        if "/" not in symbol:
+            symbol = f"{symbol}/USDC"
+        
+        # Get database repository
+        db_repo = get_db_repo(bot)
+        
+        # Add pair
+        success = await db_repo.add_pair(symbol)
+        
+        if success:
+            await message.answer(
+                PAIR_ADDED.format(symbol=symbol),
+                reply_markup=get_main_menu_keyboard()
+            )
+        else:
+            await message.answer(
+                PAIR_ALREADY_EXISTS.format(symbol=symbol),
+                reply_markup=get_main_menu_keyboard()
+            )
+        
+        await state.clear()
+        
+    except Exception as e:
+        logger.error(f"Error handling pair input: {e}")
+        await message.answer(ERROR_GENERIC)
+        await state.clear()
+
+
+def register_handlers(dp):
+    """Register all handlers with the dispatcher"""
+    dp.include_router(router)
