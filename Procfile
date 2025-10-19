@@ -1,1 +1,1 @@
-worker: pip install -r requirements-railway.txt && python force_reset_db.py && python -m app.main
+worker: pip install -r requirements-railway.txt && python simple_reset.py && python -m app.main
