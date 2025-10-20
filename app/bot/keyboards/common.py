@@ -48,6 +48,21 @@ def get_pairs_management_keyboard(pairs: list) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def get_check_pairs_keyboard(pairs: list) -> InlineKeyboardMarkup:
+    """Keyboard to pick a pair for on-demand analysis"""
+    builder = InlineKeyboardBuilder()
+    for pair in pairs:
+        symbol = pair.symbol if hasattr(pair, "symbol") else str(pair)
+        builder.row(
+            InlineKeyboardButton(
+                text=symbol,
+                callback_data=f"check_pair:{symbol}"
+            )
+        )
+    builder.row(InlineKeyboardButton(text=BTN_BACK, callback_data="main_menu"))
+    return builder.as_markup()
+
+
 def get_risk_keyboard(current_risk: float) -> InlineKeyboardMarkup:
     """Get risk management keyboard"""
     builder = InlineKeyboardBuilder()

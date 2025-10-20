@@ -57,6 +57,11 @@ Use /risk command. Default is 0.7% per trade.
 • B (Good): Decent setup, average confirmation
 • C (High-risk): Weak confirmation, use smaller position
 
+<b>New diagnostic commands</b>
+• /health — quick health check (DB + exchange reachability)
+• /mock_signal — send a test signal to yourself (delivery check)
+• /check — pick a pair and get a current status: trend filter, entry triggers and explanation why it's not a long now (if conditions are not met)
+
 <b>⚠️ Important Disclaimers:</b>
 • This is NOT financial advice
 • Past performance doesn't guarantee future results

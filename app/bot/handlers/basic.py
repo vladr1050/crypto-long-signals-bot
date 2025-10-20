@@ -14,7 +14,8 @@ from aiogram.fsm.state import State, StatesGroup
 
 from app.bot.keyboards.common import (
     get_back_keyboard, get_help_keyboard, get_main_menu_keyboard,
-    get_pairs_management_keyboard, get_risk_keyboard, get_signal_keyboard
+    get_pairs_management_keyboard, get_risk_keyboard, get_signal_keyboard,
+    get_check_pairs_keyboard,
 )
 from app.bot.texts_en import *
 from app.db.repo import DatabaseRepository
@@ -124,6 +125,108 @@ async def cmd_mock_signal(message: Message, **kwargs):
     except Exception as e:
         logger.error(f"Mock signal failed: {e}")
         await message.answer("❌ Mock signal failed. See logs.")
+
+
+@router.message(Command("check"))
+async def cmd_check(message: Message, **kwargs):
+    """Start interactive check: pick a pair to analyze now."""
+    try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        pairs = await db_repo.get_enabled_pairs()
+        if not pairs:
+            await message.answer("No enabled pairs.")
+            return
+        await message.answer(
+            "Choose a pair to analyze:",
+            reply_markup=get_check_pairs_keyboard(pairs),
+        )
+    except Exception as e:
+        logger.error(f"/check failed: {e}")
+        await message.answer("❌ Check failed. See logs.")
+
+
+@router.callback_query(F.data.startswith("check_pair:"))
+async def callback_check_pair(callback: CallbackQuery, **kwargs):
+    """Analyze selected pair: trend, entry triggers, and reason not-long."""
+    try:
+        symbol = callback.data.split(":", 1)[1]
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        mds = MarketDataService()
+        ta = TechnicalAnalysis()
+        rm = RiskManager()
+
+        # Fetch data
+        h1 = await mds.get_ohlcv(symbol, "1h", 200)
+        m15 = await mds.get_ohlcv(symbol, "15m", 200)
+        m5 = await mds.get_ohlcv(symbol, "5m", 200)
+
+        if h1 is None or m15 is None or m5 is None:
+            await callback.answer("No data for pair", show_alert=True)
+            return
+
+        # Indicators
+        ema200_h1 = ta.ema(h1["close"], 200).iloc[-1]
+        rsi_h1 = ta.rsi(h1["close"], 14).iloc[-1]
+        ema50_m15 = ta.ema(m15["close"], 50).iloc[-1]
+        price_h1 = float(h1["close"].iloc[-1])
+        price_m15 = float(m15["close"].iloc[-1])
+
+        trend_ok = price_h1 > ema200_h1 and price_m15 > ema50_m15 and 45 <= rsi_h1 <= 65
+
+        # Entry triggers (sample): EMA9>EMA21 cross on 15m, BB squeeze breakout, bullish engulfing
+        ema9 = ta.ema(m15["close"], 9)
+        ema21 = ta.ema(m15["close"], 21)
+        crossover = ema9.iloc[-1] > ema21.iloc[-1] and ema9.iloc[-2] <= ema21.iloc[-2]
+
+        bb_up, bb_mid, bb_low = ta.bbands(m15["close"], 20, 2.0)
+        squeeze = (bb_up.iloc[-1] - bb_low.iloc[-1]) / bb_mid.iloc[-1] < 0.05
+
+        last = m15.iloc[-1]
+        prev = m15.iloc[-2]
+        bullish_engulf = last["close"] > last["open"] and prev["close"] < prev["open"] and last["close"] > prev["open"] and last["open"] < prev["close"]
+
+        triggers = [
+            ("EMA9>EMA21 cross", crossover),
+            ("BB squeeze", squeeze),
+            ("Bullish engulfing", bullish_engulf),
+        ]
+        triggers_hit = [name for name, ok in triggers if ok]
+
+        reasons = []
+        if not trend_ok:
+            if price_h1 <= ema200_h1:
+                reasons.append("Price below EMA200 (1h)")
+            if price_m15 <= ema50_m15:
+                reasons.append("Price below EMA50 (15m)")
+            if not (45 <= rsi_h1 <= 65):
+                reasons.append(f"RSI(14,1h) {rsi_h1:.1f} not in 45-65")
+        if len(triggers_hit) < 2:
+            reasons.append(f"Only {len(triggers_hit)} entry trigger(s) hit")
+
+        # Compose text
+        text = (
+            f"📈 <b>{symbol}</b> status\n"
+            f"Price (1h): {price_h1:.4f}, EMA200: {ema200_h1:.4f}, RSI14: {rsi_h1:.1f}\n"
+            f"Price (15m): {price_m15:.4f}, EMA50: {ema50_m15:.4f}\n"
+            f"Trend filter: {'OK' if trend_ok else 'FAIL'}\n\n"
+            f"Entry triggers hit: {', '.join(triggers_hit) if triggers_hit else 'none'}\n"
+        )
+
+        if reasons:
+            text += "\n❌ Not long now because:\n- " + "\n- ".join(reasons)
+        else:
+            text += "\n✅ Conditions look good for a long (test mode)."
+
+        await safe_edit(
+            callback.message,
+            text,
+            reply_markup=get_main_menu_keyboard(),
+            parse_mode="HTML",
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"check_pair failed: {e}")
+        await callback.answer("Error during check", show_alert=True)
 
 
 @router.message(Command("help"))
