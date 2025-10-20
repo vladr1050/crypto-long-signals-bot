@@ -106,6 +106,11 @@ class MarketScanner:
             # Prepare symbols list
             symbols = [pair.symbol for pair in pairs if pair.symbol not in active_symbols]
             
+            # Debug: log symbols
+            logger.info(f"Symbols from database: {symbols}")
+            for i, symbol in enumerate(symbols):
+                logger.info(f"Symbol {i}: '{symbol}' (type: {type(symbol)}, repr: {repr(symbol)})")
+            
             if not symbols:
                 logger.info("All pairs have active signals, skipping scan")
                 return
