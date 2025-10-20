@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import List
 
 from aiogram import Router, F, Bot, Dispatcher
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
@@ -21,6 +22,15 @@ from app.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 router = Router()
+async def safe_edit(message: Message, text: str, reply_markup=None, parse_mode: str | None = None):
+    """Edit text safely: ignore 'message is not modified' errors."""
+    try:
+        await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+    except TelegramBadRequest as e:
+        # Ignore if content and markup are the same
+        if "message is not modified" in str(e).lower():
+            return
+        raise
 
 
 class RiskState(StatesGroup):
@@ -204,10 +214,11 @@ async def cmd_signals_off(message: Message, **kwargs):
 @router.callback_query(F.data == "main_menu")
 async def callback_main_menu(callback: CallbackQuery):
     """Handle main menu callback"""
-    await callback.message.edit_text(
+    await safe_edit(
+        callback.message,
         WELCOME_MESSAGE,
         reply_markup=get_main_menu_keyboard(),
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
     await callback.answer()
 
@@ -215,10 +226,11 @@ async def callback_main_menu(callback: CallbackQuery):
 @router.callback_query(F.data == "show_help")
 async def callback_show_help(callback: CallbackQuery):
     """Handle show help callback"""
-    await callback.message.edit_text(
+    await safe_edit(
+        callback.message,
         HELP_MESSAGE,
         reply_markup=get_help_keyboard(),
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
     await callback.answer()
 
@@ -226,10 +238,11 @@ async def callback_show_help(callback: CallbackQuery):
 @router.callback_query(F.data == "show_strategy")
 async def callback_show_strategy(callback: CallbackQuery):
     """Handle show strategy callback"""
-    await callback.message.edit_text(
+    await safe_edit(
+        callback.message,
         STRATEGY_MESSAGE,
         reply_markup=get_back_keyboard(),
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
     await callback.answer()
 
@@ -259,10 +272,11 @@ async def callback_show_status(callback: CallbackQuery, **kwargs):
         status_text += f"\n{RISK_SETTING.format(risk=user.risk_pct)}"
         status_text += f"\n{LAST_SCAN.format(time=datetime.now().strftime('%H:%M:%S'))}"
         
-        await callback.message.edit_text(
+        await safe_edit(
+            callback.message,
             status_text,
             reply_markup=get_main_menu_keyboard(),
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         await callback.answer()
         
@@ -280,10 +294,11 @@ async def callback_manage_pairs(callback: CallbackQuery, **kwargs):
         
         pairs = await db_repo.get_all_pairs()
         
-        await callback.message.edit_text(
+        await safe_edit(
+            callback.message,
             PAIRS_HEADER,
             reply_markup=get_pairs_management_keyboard(pairs),
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         await callback.answer()
         
@@ -301,10 +316,11 @@ async def callback_set_risk(callback: CallbackQuery, **kwargs):
         
         user = await db_repo.get_or_create_user(callback.from_user.id)
         
-        await callback.message.edit_text(
+        await safe_edit(
+            callback.message,
             f"{RISK_HEADER}{CURRENT_RISK.format(risk=user.risk_pct)}",
             reply_markup=get_risk_keyboard(user.risk_pct),
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         await callback.answer()
         
@@ -333,10 +349,11 @@ async def callback_set_risk_value(callback: CallbackQuery, **kwargs):
         if success:
             await callback.answer(f"Risk updated to {risk_value}%")
             # Refresh the risk keyboard
-            await callback.message.edit_text(
+            await safe_edit(
+                callback.message,
                 f"{RISK_HEADER}{CURRENT_RISK.format(risk=risk_value)}",
                 reply_markup=get_risk_keyboard(risk_value),
-                parse_mode="HTML"
+                parse_mode="HTML",
             )
         else:
             await callback.answer(ERROR_GENERIC)
@@ -361,10 +378,11 @@ async def callback_toggle_pair(callback: CallbackQuery, **kwargs):
         
         # Refresh pairs list
         pairs = await db_repo.get_all_pairs()
-        await callback.message.edit_text(
+        await safe_edit(
+            callback.message,
             PAIRS_HEADER,
             reply_markup=get_pairs_management_keyboard(pairs),
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         
     except Exception as e:
