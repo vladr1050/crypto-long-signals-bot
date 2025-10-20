@@ -223,16 +223,26 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
         vol_sma = m15["volume"].rolling(window=20).mean()
         vol_ratio = float(last["volume"] / vol_sma.iloc[-1]) if vol_sma.iloc[-1] else 0.0
 
+        ok = lambda x: '🟢' if x else '🔴'
+        hint_trend = (
+            "Above EMA200/EMA50 & RSI 45-65" if trend_ok else "Need >EMA200(1h), >EMA50(15m), RSI in 45-65"
+        )
+        hint_cross = "Momentum shift if cross just happened" if crossover else "Wait for EMA9 crossing EMA21 up"
+        hint_squeeze = "Volatility compression can precede breakout" if squeeze else "No squeeze now"
+        hint_candle = (
+            "Demand signal on candle" if bullish_engulf or lower_wick_ratio >= 2.0 else "No bullish candle pattern"
+        )
+
         text = (
             f"📈 <b>{symbol}</b> status\n"
             f"Price (1h): {price_h1:.4f}, EMA200: {ema200_h1:.4f}, RSI14: {rsi_h1:.1f}\n"
             f"Price (15m): {price_m15:.4f}, EMA50: {ema50_m15:.4f}\n"
-            f"Trend filter: {'OK' if trend_ok else 'FAIL'}\n\n"
+            f"Trend filter: {ok(trend_ok)} {hint_trend}\n\n"
             f"Entry triggers hit: {', '.join(triggers_hit) if triggers_hit else 'none'}\n"
-            f"• EMA9/EMA21: {ema9_now:.4f} / {ema21_now:.4f} (prev {ema9_prev:.4f}/{ema21_prev:.4f}) → cross: {'YES' if crossover else 'NO'}\n"
-            f"• BB width: {curr_width*100:.2f}% (avg 10: {avg_width*100:.2f}%) → squeeze: {'YES' if squeeze else 'NO'}\n"
-            f"• Volume ratio: {vol_ratio:.2f}× (vs SMA20)\n"
-            f"• Candle: bullish engulfing={str(bullish_engulf)}; lower-wick/body={lower_wick_ratio:.2f}x\n"
+            f"{ok(crossover)} EMA9/EMA21 {ema9_now:.4f}/{ema21_now:.4f} (prev {ema9_prev:.4f}/{ema21_prev:.4f}) — {hint_cross}\n"
+            f"{ok(squeeze)} BB width {curr_width*100:.2f}% (avg 10: {avg_width*100:.2f}%) — {hint_squeeze}\n"
+            f"ℹ️ Volume ratio: {vol_ratio:.2f}× vs SMA20\n"
+            f"{ok(bullish_engulf or lower_wick_ratio>=2.0)} Candle: engulfing={str(bullish_engulf)}, lower-wick/body={lower_wick_ratio:.2f}x — {hint_candle}\n"
         )
 
         if reasons:
