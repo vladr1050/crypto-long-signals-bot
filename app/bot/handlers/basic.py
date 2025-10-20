@@ -178,14 +178,27 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
         # Entry triggers (sample): EMA9>EMA21 cross on 15m, BB squeeze breakout, bullish engulfing
         ema9 = ta.calculate_ema(m15["close"], 9)
         ema21 = ta.calculate_ema(m15["close"], 21)
-        crossover = ema9.iloc[-1] > ema21.iloc[-1] and ema9.iloc[-2] <= ema21.iloc[-2]
+        ema9_now = float(ema9.iloc[-1])
+        ema21_now = float(ema21.iloc[-1])
+        ema9_prev = float(ema9.iloc[-2])
+        ema21_prev = float(ema21.iloc[-2])
+        crossover = ema9_now > ema21_now and ema9_prev <= ema21_prev
 
         bb_up, bb_low, bb_mid = ta.calculate_bollinger_bands(m15["close"], 20, 2.0)
-        squeeze = (bb_up.iloc[-1] - bb_low.iloc[-1]) / bb_mid.iloc[-1] < 0.05
+        curr_width = float((bb_up.iloc[-1] - bb_low.iloc[-1]) / bb_mid.iloc[-1])
+        avg_width = float(((bb_up - bb_low) / bb_mid).tail(10).mean())
+        squeeze = curr_width < 0.05
 
         last = m15.iloc[-1]
         prev = m15.iloc[-2]
-        bullish_engulf = last["close"] > last["open"] and prev["close"] < prev["open"] and last["close"] > prev["open"] and last["open"] < prev["close"]
+        bullish_engulf = (
+            last["close"] > last["open"] and prev["close"] < prev["open"]
+            and last["close"] > prev["open"] and last["open"] < prev["close"]
+        )
+        body = float(abs(last["close"] - last["open"]))
+        lower_wick = float((last["open"] - last["low"]) if last["close"] > last["open"] else (last["close"] - last["low"]))
+        upper_wick = float((last["high"] - last["close"]) if last["close"] > last["open"] else (last["high"] - last["open"]))
+        lower_wick_ratio = (lower_wick / body) if body > 0 else 0.0
 
         triggers = [
             ("EMA9>EMA21 cross", crossover),
@@ -206,12 +219,20 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
             reasons.append(f"Only {len(triggers_hit)} entry trigger(s) hit")
 
         # Compose text
+        # Volume diagnostics for context
+        vol_sma = m15["volume"].rolling(window=20).mean()
+        vol_ratio = float(last["volume"] / vol_sma.iloc[-1]) if vol_sma.iloc[-1] else 0.0
+
         text = (
             f"📈 <b>{symbol}</b> status\n"
             f"Price (1h): {price_h1:.4f}, EMA200: {ema200_h1:.4f}, RSI14: {rsi_h1:.1f}\n"
             f"Price (15m): {price_m15:.4f}, EMA50: {ema50_m15:.4f}\n"
             f"Trend filter: {'OK' if trend_ok else 'FAIL'}\n\n"
             f"Entry triggers hit: {', '.join(triggers_hit) if triggers_hit else 'none'}\n"
+            f"• EMA9/EMA21: {ema9_now:.4f} / {ema21_now:.4f} (prev {ema9_prev:.4f}/{ema21_prev:.4f}) → cross: {'YES' if crossover else 'NO'}\n"
+            f"• BB width: {curr_width*100:.2f}% (avg 10: {avg_width*100:.2f}%) → squeeze: {'YES' if squeeze else 'NO'}\n"
+            f"• Volume ratio: {vol_ratio:.2f}× (vs SMA20)\n"
+            f"• Candle: bullish engulfing={str(bullish_engulf)}; lower-wick/body={lower_wick_ratio:.2f}x\n"
         )
 
         if reasons:
