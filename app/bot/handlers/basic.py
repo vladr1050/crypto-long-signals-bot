@@ -167,20 +167,20 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
             return
 
         # Indicators
-        ema200_h1 = ta.ema(h1["close"], 200).iloc[-1]
-        rsi_h1 = ta.rsi(h1["close"], 14).iloc[-1]
-        ema50_m15 = ta.ema(m15["close"], 50).iloc[-1]
+        ema200_h1 = ta.calculate_ema(h1["close"], 200).iloc[-1]
+        rsi_h1 = ta.calculate_rsi(h1["close"], 14).iloc[-1]
+        ema50_m15 = ta.calculate_ema(m15["close"], 50).iloc[-1]
         price_h1 = float(h1["close"].iloc[-1])
         price_m15 = float(m15["close"].iloc[-1])
 
         trend_ok = price_h1 > ema200_h1 and price_m15 > ema50_m15 and 45 <= rsi_h1 <= 65
 
         # Entry triggers (sample): EMA9>EMA21 cross on 15m, BB squeeze breakout, bullish engulfing
-        ema9 = ta.ema(m15["close"], 9)
-        ema21 = ta.ema(m15["close"], 21)
+        ema9 = ta.calculate_ema(m15["close"], 9)
+        ema21 = ta.calculate_ema(m15["close"], 21)
         crossover = ema9.iloc[-1] > ema21.iloc[-1] and ema9.iloc[-2] <= ema21.iloc[-2]
 
-        bb_up, bb_mid, bb_low = ta.bbands(m15["close"], 20, 2.0)
+        bb_up, bb_low, bb_mid = ta.calculate_bollinger_bands(m15["close"], 20, 2.0)
         squeeze = (bb_up.iloc[-1] - bb_low.iloc[-1]) / bb_mid.iloc[-1] < 0.05
 
         last = m15.iloc[-1]
