@@ -86,32 +86,39 @@ class NotificationService:
             }
             grade_desc = grade_descriptions.get(signal['grade'], signal['grade'])
             
-            # Calculate percentages
-            entry = signal['entry_price']
-            sl = signal['stop_loss']
-            tp1 = signal['take_profit_1']
-            tp2 = signal['take_profit_2']
+            # Support both canonical keys and mock keys
+            entry = signal.get('entry_price') or signal.get('entry')
+            sl = signal.get('stop_loss') or signal.get('sl')
+            tp1 = signal.get('take_profit_1') or signal.get('tp1')
+            tp2 = signal.get('take_profit_2') or signal.get('tp2')
             
             sl_pct = round(((entry - sl) / entry) * 100, 1)
             tp1_pct = round(((tp1 - entry) / entry) * 100, 1)
             tp2_pct = round(((tp2 - entry) / entry) * 100, 1)
             
-            # Calculate position size (mock - would need account value)
-            position_size = round(1000 / entry, 4)  # Mock $1000 account
+            # Position size: accept provided value or fallback to mock calc
+            position_size = signal.get('position')
+            if position_size is None:
+                try:
+                    position_size = round(1000 / entry, 4)  # Mock $1000 account
+                except Exception:
+                    position_size = 0
             
             # Build message
             message = SIGNAL_HEADER.format(
                 grade=grade_desc,
                 symbol=signal['symbol'],
-                timeframe=signal['timeframe']
+                timeframe=signal.get('timeframe', '15m')
             )
             message += f"\n\n{SIGNAL_ENTRY.format(entry=entry)}"
             message += f"\n{SIGNAL_SL.format(sl=sl, sl_pct=sl_pct)}"
             message += f"\n{SIGNAL_TP1.format(tp1=tp1, tp1_pct=tp1_pct)}"
             message += f"\n{SIGNAL_TP2.format(tp2=tp2, tp2_pct=tp2_pct)}"
-            message += f"\n\n{SIGNAL_RISK.format(risk=signal['risk_level'], position=position_size)}"
+            risk_val = signal.get('risk_level') or signal.get('risk') or '—'
+            message += f"\n\n{SIGNAL_RISK.format(risk=risk_val, position=position_size)}"
             message += f"\n\n{SIGNAL_REASON.format(reason=signal['reason'])}"
-            message += f"\n\n{SIGNAL_EXPIRY.format(expiry=signal.get('expiry_hours', 8))}"
+            expiry_hours = signal.get('expiry_hours') or (signal.get('expires', '').rstrip('h') if isinstance(signal.get('expires'), str) else None) or 8
+            message += f"\n\n{SIGNAL_EXPIRY.format(expiry=expiry_hours)}"
             message += f"\n\n{SIGNAL_NOTE}"
             message += f"\n\n{SIGNAL_DISCLAIMER}"
             
