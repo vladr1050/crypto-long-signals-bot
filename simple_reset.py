@@ -84,7 +84,7 @@ async def reset_db():
             """))
             
             # Insert default pairs
-            pairs = ["ETH/USDC", "BNB/USDC", "XRP/USDC", "SOL/USDC", "ADA/USDC"]
+            pairs = ["ETH/USDT", "BNB/USDT", "XRP/USDT", "SOL/USDT", "ADA/USDT"]
             for pair in pairs:
                 await conn.execute(text("""
                     INSERT INTO pairs (symbol, enabled) 

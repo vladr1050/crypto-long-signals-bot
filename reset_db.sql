@@ -62,11 +62,11 @@ CREATE INDEX idx_signals_status ON signals(status);
 
 -- Insert default pairs
 INSERT INTO pairs (symbol, enabled) VALUES 
-('ETH/USDC', TRUE),
-('BNB/USDC', TRUE),
-('XRP/USDC', TRUE),
-('SOL/USDC', TRUE),
-('ADA/USDC', TRUE)
+('ETH/USDT', TRUE),
+('BNB/USDT', TRUE),
+('XRP/USDT', TRUE),
+('SOL/USDT', TRUE),
+('ADA/USDT', TRUE)
 ON CONFLICT (symbol) DO NOTHING;
 
 -- Verify tables were created

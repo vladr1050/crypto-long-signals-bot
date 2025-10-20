@@ -1,6 +1,7 @@
 """
 Application configuration settings
 """
+import json
 import os
 from typing import List
 from pydantic import Field
@@ -52,8 +53,17 @@ class Settings(BaseSettings):
     
     @property
     def pairs_list(self) -> List[str]:
-        """Get pairs as list"""
-        return [pair.strip() for pair in self.default_pairs.split(",")]
+        """Get pairs as list, handling both JSON array and comma-separated string formats"""
+        try:
+            # Try to parse as JSON array first
+            if self.default_pairs.startswith('[') and self.default_pairs.endswith(']'):
+                return json.loads(self.default_pairs)
+            else:
+                # Fall back to comma-separated string
+                return [pair.strip() for pair in self.default_pairs.split(",")]
+        except (json.JSONDecodeError, AttributeError):
+            # If JSON parsing fails, try comma-separated string
+            return [pair.strip() for pair in self.default_pairs.split(",")]
     
     class Config:
         env_file = ".env"
