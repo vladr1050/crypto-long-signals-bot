@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     trend_timeframe: str = "1h"
     entry_timeframe: str = "15m"
     confirmation_timeframe: str = "5m"
+
+    # Networking / rate limits
+    max_concurrent_requests: int = 5
+    http_pool_connections: int = 20
+    http_pool_maxsize: int = 50
     
     @property
     def pairs_list(self) -> List[str]:

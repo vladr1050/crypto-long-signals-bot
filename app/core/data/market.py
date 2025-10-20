@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from functools import partial
 
 import ccxt
+import requests
 import pandas as pd
 
 from app.config.settings import settings
@@ -28,10 +29,21 @@ class MarketDataService:
         """Initialize exchange connection (spot-only)"""
         # ccxt exchange names — строчными буквами, settings.exchange='binance'
         exchange_class = getattr(ccxt, settings.exchange)
+        # Tune HTTP session pool sizes to avoid urllib3 pool warnings
+        session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=getattr(settings, "http_pool_connections", 20),
+            pool_maxsize=getattr(settings, "http_pool_maxsize", 50),
+            max_retries=3,
+        )
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
         config: Dict[str, Any] = {
             "sandbox": False,
             "enableRateLimit": True,
             "options": {"defaultType": "spot"},  # spot only
+            "session": session,
         }
         # API creds if provided (не обязательны для публичных OHLCV)
         if settings.binance_api_key and settings.binance_api_secret:
@@ -178,10 +190,13 @@ class MarketDataService:
         await self._ensure_markets()
         results: Dict[str, Dict[str, pd.DataFrame]] = {sym: {} for sym in symbols}
 
+        semaphore = asyncio.Semaphore(getattr(settings, "max_concurrent_requests", 5))
+
         async def fetch_one(sym: str, tf: str):
-            df = await self.get_ohlcv(sym, tf, limit=limit)
-            if df is not None:
-                results[sym][tf] = df
+            async with semaphore:
+                df = await self.get_ohlcv(sym, tf, limit=limit)
+                if df is not None:
+                    results[sym][tf] = df
 
         tasks = [asyncio.create_task(fetch_one(sym, tf)) for sym in symbols for tf in timeframes]
         if tasks:
