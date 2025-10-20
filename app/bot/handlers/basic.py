@@ -21,6 +21,8 @@ from app.bot.texts_en import *
 from app.db.repo import DatabaseRepository
 from app.config.settings import get_settings
 from app.core.data.market import MarketDataService
+from app.core.indicators.ta import TechnicalAnalysis
+from app.core.risk.sizing import RiskManager
 from app.services.notifier import NotificationService
 
 logger = logging.getLogger(__name__)
