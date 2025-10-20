@@ -19,6 +19,7 @@ from app.db.repo import DatabaseRepository
 from app.services.scanner import MarketScanner
 from app.services.notifier import NotificationService
 from app.bot.handlers.basic import register_handlers
+from app.bot.middlewares.db import DbRepoMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -102,8 +103,8 @@ async def main():
     # Register handlers
     register_handlers(dp)
     
-    # Store dependencies in dispatcher data
-    dp["db_repo"] = db_repo
+    # Inject db_repo via middleware (preferred for aiogram 3.x)
+    dp.update.outer_middleware(DbRepoMiddleware(db_repo))
     
     # Start bot with lifespan
     async with lifespan():

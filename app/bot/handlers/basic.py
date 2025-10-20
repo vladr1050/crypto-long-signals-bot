@@ -33,17 +33,16 @@ class PairState(StatesGroup):
     waiting_for_pair = State()
 
 
-def get_db_repo(dp: Dispatcher):
-    """Get database repository from dispatcher data"""
-    return dp["db_repo"]
+def _get_db_repo_from_kwargs(kwargs):
+    return kwargs.get("db_repo")
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, dp: Dispatcher):
+async def cmd_start(message: Message, **kwargs):
     """Handle /start command"""
     try:
         # Get database repository from dispatcher data
-        db_repo = get_db_repo(dp)
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         
         # Get or create user
         user = await db_repo.get_or_create_user(message.from_user.id)
@@ -82,11 +81,11 @@ async def cmd_strategy(message: Message):
 
 
 @router.message(Command("status"))
-async def cmd_status(message: Message, dp: Dispatcher):
+async def cmd_status(message: Message, **kwargs):
     """Handle /status command"""
     try:
         # Get database repository
-        db_repo = get_db_repo(dp)
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         
         # Get user info
         user = await db_repo.get_or_create_user(message.from_user.id)
@@ -118,11 +117,11 @@ async def cmd_status(message: Message, dp: Dispatcher):
 
 
 @router.message(Command("pairs"))
-async def cmd_pairs(message: Message, dp: Dispatcher):
+async def cmd_pairs(message: Message, **kwargs):
     """Handle /pairs command"""
     try:
         # Get database repository
-        db_repo = get_db_repo(dp)
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         
         pairs = await db_repo.get_all_pairs()
         
@@ -138,11 +137,11 @@ async def cmd_pairs(message: Message, dp: Dispatcher):
 
 
 @router.message(Command("risk"))
-async def cmd_risk(message: Message, dp: Dispatcher):
+async def cmd_risk(message: Message, **kwargs):
     """Handle /risk command"""
     try:
         # Get database repository
-        db_repo = get_db_repo(dp)
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         
         user = await db_repo.get_or_create_user(message.from_user.id)
         
@@ -158,11 +157,11 @@ async def cmd_risk(message: Message, dp: Dispatcher):
 
 
 @router.message(Command("signals_on"))
-async def cmd_signals_on(message: Message, dp: Dispatcher):
+async def cmd_signals_on(message: Message, **kwargs):
     """Handle /signals_on command"""
     try:
         # Get database repository
-        db_repo = get_db_repo(dp)
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         
         enabled = await db_repo.toggle_user_signals(message.from_user.id)
         
@@ -180,11 +179,11 @@ async def cmd_signals_on(message: Message, dp: Dispatcher):
 
 
 @router.message(Command("signals_off"))
-async def cmd_signals_off(message: Message, dp: Dispatcher):
+async def cmd_signals_off(message: Message, **kwargs):
     """Handle /signals_off command"""
     try:
         # Get database repository
-        db_repo = get_db_repo(dp)
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         
         enabled = await db_repo.toggle_user_signals(message.from_user.id)
         
@@ -236,11 +235,11 @@ async def callback_show_strategy(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == "show_status")
-async def callback_show_status(callback: CallbackQuery, dp: Dispatcher):
+async def callback_show_status(callback: CallbackQuery, **kwargs):
     """Handle show status callback"""
     try:
         # Get database repository
-        db_repo = get_db_repo(dp)
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         
         # Get user info
         user = await db_repo.get_or_create_user(callback.from_user.id)
@@ -273,11 +272,11 @@ async def callback_show_status(callback: CallbackQuery, dp: Dispatcher):
 
 
 @router.callback_query(F.data == "manage_pairs")
-async def callback_manage_pairs(callback: CallbackQuery, dp: Dispatcher):
+async def callback_manage_pairs(callback: CallbackQuery, **kwargs):
     """Handle manage pairs callback"""
     try:
         # Get database repository
-        db_repo = get_db_repo(dp)
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         
         pairs = await db_repo.get_all_pairs()
         
@@ -294,11 +293,11 @@ async def callback_manage_pairs(callback: CallbackQuery, dp: Dispatcher):
 
 
 @router.callback_query(F.data == "set_risk")
-async def callback_set_risk(callback: CallbackQuery, dp: Dispatcher):
+async def callback_set_risk(callback: CallbackQuery, **kwargs):
     """Handle set risk callback"""
     try:
         # Get database repository
-        db_repo = get_db_repo(dp)
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         
         user = await db_repo.get_or_create_user(callback.from_user.id)
         
@@ -315,7 +314,7 @@ async def callback_set_risk(callback: CallbackQuery, dp: Dispatcher):
 
 
 @router.callback_query(F.data.startswith("set_risk:"))
-async def callback_set_risk_value(callback: CallbackQuery, dp: Dispatcher):
+async def callback_set_risk_value(callback: CallbackQuery, **kwargs):
     """Handle set risk value callback"""
     try:
         risk_value = float(callback.data.split(":")[1])
@@ -326,7 +325,7 @@ async def callback_set_risk_value(callback: CallbackQuery, dp: Dispatcher):
             return
         
         # Get database repository
-        db_repo = get_db_repo(dp)
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         
         # Update user risk
         success = await db_repo.update_user_risk(callback.from_user.id, risk_value)
@@ -348,11 +347,11 @@ async def callback_set_risk_value(callback: CallbackQuery, dp: Dispatcher):
 
 
 @router.callback_query(F.data.startswith("toggle_pair:"))
-async def callback_toggle_pair(callback: CallbackQuery, dp: Dispatcher):
+async def callback_toggle_pair(callback: CallbackQuery, **kwargs):
     """Handle toggle pair callback"""
     try:
         # Get database repository
-        db_repo = get_db_repo(dp)
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         
         symbol = callback.data.split(":")[1]
         enabled = await db_repo.toggle_pair(symbol)
@@ -386,11 +385,11 @@ async def callback_add_pair(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data == "enable_signals")
-async def callback_enable_signals(callback: CallbackQuery, dp: Dispatcher):
+async def callback_enable_signals(callback: CallbackQuery, **kwargs):
     """Handle enable signals callback"""
     try:
         # Get database repository
-        db_repo = get_db_repo(dp)
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         
         enabled = await db_repo.toggle_user_signals(callback.from_user.id)
         
@@ -405,11 +404,11 @@ async def callback_enable_signals(callback: CallbackQuery, dp: Dispatcher):
 
 
 @router.callback_query(F.data == "disable_signals")
-async def callback_disable_signals(callback: CallbackQuery, dp: Dispatcher):
+async def callback_disable_signals(callback: CallbackQuery, **kwargs):
     """Handle disable signals callback"""
     try:
         # Get database repository
-        db_repo = get_db_repo(dp)
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         
         enabled = await db_repo.toggle_user_signals(callback.from_user.id)
         
@@ -425,7 +424,7 @@ async def callback_disable_signals(callback: CallbackQuery, dp: Dispatcher):
 
 # State handlers
 @router.message(PairState.waiting_for_pair)
-async def handle_pair_input(message: Message, state: FSMContext, dp: Dispatcher):
+async def handle_pair_input(message: Message, state: FSMContext, **kwargs):
     """Handle pair input from user"""
     try:
         symbol = message.text.strip().upper()
@@ -435,7 +434,7 @@ async def handle_pair_input(message: Message, state: FSMContext, dp: Dispatcher)
             symbol = f"{symbol}/USDC"
         
         # Get database repository
-        db_repo = get_db_repo(dp)
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         
         # Add pair
         success = await db_repo.add_pair(symbol)
