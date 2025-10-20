@@ -19,6 +19,8 @@ from app.bot.keyboards.common import (
 from app.bot.texts_en import *
 from app.db.repo import DatabaseRepository
 from app.config.settings import get_settings
+from app.core.data.market import MarketDataService
+from app.services.notifier import NotificationService
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -68,6 +70,60 @@ async def cmd_start(message: Message, **kwargs):
     except Exception as e:
         logger.error(f"Error in start command: {e}")
         await message.answer(ERROR_GENERIC)
+
+
+@router.message(Command("health"))
+async def cmd_health(message: Message, **kwargs):
+    """Health check: DB + Exchange connectivity"""
+    try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        pairs = await db_repo.get_all_pairs()
+        enabled = [p.symbol for p in pairs if p.enabled]
+
+        # Try fetch 1 candle for first enabled pair
+        exchange_ok = "n/a"
+        if enabled:
+            mds = MarketDataService()
+            df = await mds.get_ohlcv(enabled[0], "1h", limit=1)
+            exchange_ok = "OK" if df is not None and not df.empty else "FAIL"
+
+        text = (
+            "✅ Bot health\n"
+            f"DB: OK (pairs={len(pairs)}, enabled={len(enabled)})\n"
+            f"Exchange: {exchange_ok} (test={enabled[0] if enabled else 'n/a'} 1h)\n"
+            "Use /status to see scan stats."
+        )
+        await message.answer(text, reply_markup=get_main_menu_keyboard(), parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        await message.answer("❌ Health check failed. See logs.")
+
+
+@router.message(Command("mock_signal"))
+async def cmd_mock_signal(message: Message, **kwargs):
+    """Send a mock signal to the current user to verify delivery"""
+    try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        await db_repo.get_or_create_user(message.from_user.id)
+        notifier = NotificationService()
+        mock = {
+            "id": 0,
+            "symbol": "TEST/USDC",
+            "grade": "A",
+            "timeframe": "15m",
+            "entry": 100.0,
+            "sl": 95.0,
+            "tp1": 105.0,
+            "tp2": 110.0,
+            "risk": "Low",
+            "expires": "6h",
+            "reason": "Health check",
+        }
+        ok = await notifier.send_signal(message.bot, message.from_user.id, mock, db_repo)
+        await message.answer("✅ Mock signal sent" if ok else "❌ Mock signal failed")
+    except Exception as e:
+        logger.error(f"Mock signal failed: {e}")
+        await message.answer("❌ Mock signal failed. See logs.")
 
 
 @router.message(Command("help"))
