@@ -129,6 +129,57 @@ async def cmd_mock_signal(message: Message, **kwargs):
         await message.answer("❌ Mock signal failed. See logs.")
 
 
+@router.message(Command("mock_real"))
+async def cmd_mock_real(message: Message, **kwargs):
+    """Generate and send a realistic mock signal from live data for a chosen pair (first enabled)."""
+    try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        user = await db_repo.get_or_create_user(message.from_user.id)
+        pairs = await db_repo.get_enabled_pairs()
+        if not pairs:
+            await message.answer("No enabled pairs.")
+            return
+        symbol = pairs[0].symbol
+
+        mds = MarketDataService()
+        ta = TechnicalAnalysis()
+        rm = RiskManager()
+
+        m15 = await mds.get_ohlcv(symbol, "15m", 200)
+        if m15 is None or m15.empty:
+            await message.answer("No market data for mock.")
+            return
+
+        price = float(m15["close"].iloc[-1])
+        sl = float(ta.calculate_stop_loss(m15, price))
+        tp1, tp2 = rm.calculate_take_profits(price, sl)
+
+        # Position estimate for demo: assume $10,000 account
+        position = rm.calculate_max_position_value(10000.0, user.risk_pct, price, sl)
+
+        mock = {
+            "id": 0,
+            "symbol": symbol,
+            "grade": "A",
+            "timeframe": "15m",
+            "entry": round(price, 4),
+            "sl": round(sl, 4),
+            "tp1": round(tp1, 4),
+            "tp2": round(tp2, 4),
+            "risk": f"{user.risk_pct}",
+            "position": f"${position:.2f}",
+            "expires": "8h",
+            "reason": "Trend OK + mock calculation from live data",
+        }
+
+        notifier = NotificationService()
+        ok = await notifier.send_signal(message.bot, message.from_user.id, mock, db_repo)
+        await message.answer("✅ Mock (live) signal sent" if ok else "❌ Failed to send mock signal")
+    except Exception as e:
+        logger.error(f"mock_real failed: {e}")
+        await message.answer("❌ Mock signal failed. See logs.")
+
+
 @router.message(Command("check"))
 async def cmd_check(message: Message, **kwargs):
     """Start interactive check: pick a pair to analyze now."""
