@@ -156,6 +156,9 @@ class SignalDetector:
             # Check RSI in neutral to slightly bullish range
             rsi_neutral = self.ta.is_rsi_neutral_bullish(trend_df)
             
+            # For debugging: log the individual conditions
+            logger.debug(f"Trend filter: 1h_bullish={trend_bullish}, 15m_bullish={entry_trend_bullish}, rsi_neutral={rsi_neutral}")
+            
             return trend_bullish and entry_trend_bullish and rsi_neutral
             
         except Exception as e:

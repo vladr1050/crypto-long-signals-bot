@@ -134,6 +134,46 @@ class MarketScanner:
                 await self._process_signals(signals)
             else:
                 logger.info("No signals detected in this scan")
+                # Add detailed logging for debugging
+                for symbol, tf_data in market_data.items():
+                    logger.debug(f"Checking {symbol}:")
+                    trend_df = tf_data.get(self.settings.trend_timeframe)
+                    entry_df = tf_data.get(self.settings.entry_timeframe)
+                    confirmation_df = tf_data.get(self.settings.confirmation_timeframe)
+                    
+                    if not all([df is not None and not df.empty for df in [trend_df, entry_df, confirmation_df]]):
+                        logger.debug(f"  {symbol}: Insufficient data")
+                        continue
+                    
+                    # Check trend filter
+                    trend_bullish = self.signal_detector.ta.is_trend_bullish(trend_df)
+                    entry_trend_bullish = self.signal_detector.ta.is_trend_bullish(entry_df)
+                    rsi_neutral = self.signal_detector.ta.is_rsi_neutral_bullish(trend_df)
+                    
+                    logger.debug(f"  {symbol}: Trend filter - 1h: {trend_bullish}, 15m: {entry_trend_bullish}, RSI: {rsi_neutral}")
+                    
+                    if not (trend_bullish and entry_trend_bullish and rsi_neutral):
+                        logger.debug(f"  {symbol}: Trend filter failed")
+                        continue
+                    
+                    # Check triggers
+                    triggers = []
+                    if self.signal_detector.ta.check_breakout_retest(entry_df):
+                        triggers.append("breakout_retest")
+                    if self.signal_detector.ta.check_bollinger_squeeze_expansion(entry_df):
+                        triggers.append("bb_squeeze_expansion")
+                    if self.signal_detector.ta.check_ema_crossover(entry_df):
+                        triggers.append("ema_crossover")
+                    if self.signal_detector.ta.check_bullish_candle(confirmation_df):
+                        triggers.append("bullish_candle")
+                    
+                    logger.debug(f"  {symbol}: Triggers - {len(triggers)}/4: {triggers}")
+                    
+                    if len(triggers) < 2:
+                        logger.debug(f"  {symbol}: Not enough triggers (need ≥2)")
+                        continue
+                    
+                    logger.debug(f"  {symbol}: Would generate signal!")
             
             # Clean up expired signals
             await self._cleanup_expired_signals()

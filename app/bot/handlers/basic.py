@@ -719,6 +719,260 @@ async def handle_pair_input(message: Message, state: FSMContext, **kwargs):
         await state.clear()
 
 
+@router.message(Command("debug_scanner"))
+async def cmd_debug_scanner(message: Message, **kwargs):
+    """Handle /debug_scanner command to diagnose scanner issues"""
+    try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        settings = get_settings()
+        enabled_pairs = await db_repo.get_enabled_pairs()
+        
+        debug_text = "🔍 <b>Scanner Debug Report</b>\n\n"
+        
+        # Check enabled pairs
+        debug_text += f"<b>Enabled Pairs:</b> {len(enabled_pairs)}\n"
+        for pair in enabled_pairs:
+            debug_text += f"  - {pair.symbol}\n"
+        debug_text += "\n"
+        
+        # Check active signals
+        active_signals = await db_repo.get_active_signals()
+        debug_text += f"<b>Active Signals:</b> {len(active_signals)}\n"
+        for signal in active_signals:
+            debug_text += f"  - {signal.symbol} ({signal.grade}) - {signal.created_at}\n"
+        debug_text += "\n"
+        
+        # Test market data for first pair
+        if enabled_pairs:
+            symbol = enabled_pairs[0].symbol
+            debug_text += f"<b>Testing {symbol}:</b>\n"
+            
+            # Test all timeframes
+            timeframes = [settings.trend_timeframe, settings.entry_timeframe, settings.confirmation_timeframe]
+            for tf in timeframes:
+                mds = MarketDataService()
+                df = await mds.get_ohlcv(symbol, tf, limit=50)
+                if df is not None and not df.empty:
+                    debug_text += f"  ✅ {tf}: {len(df)} candles, latest: {df['close'].iloc[-1]:.4f}\n"
+                else:
+                    debug_text += f"  ❌ {tf}: No data\n"
+            
+            debug_text += "\n"
+            
+            # Test signal detection logic
+            debug_text += f"<b>Signal Detection Test for {symbol}:</b>\n"
+            
+            # Get data for all timeframes
+            trend_df = await mds.get_ohlcv(symbol, settings.trend_timeframe, limit=250)
+            entry_df = await mds.get_ohlcv(symbol, settings.entry_timeframe, limit=60)
+            confirmation_df = await mds.get_ohlcv(symbol, settings.confirmation_timeframe, limit=30)
+            
+            if all([df is not None and not df.empty for df in [trend_df, entry_df, confirmation_df]]):
+                ta = TechnicalAnalysis()
+                
+                # Test trend filter
+                trend_bullish = ta.is_trend_bullish(trend_df)
+                entry_trend_bullish = ta.is_trend_bullish(entry_df)
+                rsi_neutral = ta.is_rsi_neutral_bullish(trend_df)
+                
+                debug_text += f"  Trend Filter: {'✅' if trend_bullish else '❌'} (1h bullish: {trend_bullish})\n"
+                debug_text += f"  Entry Trend: {'✅' if entry_trend_bullish else '❌'} (15m bullish: {entry_trend_bullish})\n"
+                debug_text += f"  RSI Range: {'✅' if rsi_neutral else '❌'} (45-65: {rsi_neutral})\n"
+                
+                trend_filter_ok = trend_bullish and entry_trend_bullish and rsi_neutral
+                debug_text += f"  <b>Trend Filter Result:</b> {'✅ PASS' if trend_filter_ok else '❌ FAIL'}\n\n"
+                
+                if trend_filter_ok:
+                    # Test entry triggers
+                    triggers = []
+                    
+                    # Test each trigger
+                    breakout_retest = ta.check_breakout_retest(entry_df)
+                    if breakout_retest:
+                        triggers.append("breakout_retest")
+                    
+                    bb_squeeze = ta.check_bollinger_squeeze_expansion(entry_df)
+                    if bb_squeeze:
+                        triggers.append("bb_squeeze_expansion")
+                    
+                    ema_crossover = ta.check_ema_crossover(entry_df)
+                    if ema_crossover:
+                        triggers.append("ema_crossover")
+                    
+                    bullish_candle = ta.check_bullish_candle(confirmation_df)
+                    if bullish_candle:
+                        triggers.append("bullish_candle")
+                    
+                    debug_text += f"  <b>Entry Triggers:</b> {len(triggers)}/4\n"
+                    debug_text += f"    - Breakout & Retest: {'✅' if breakout_retest else '❌'}\n"
+                    debug_text += f"    - BB Squeeze Expansion: {'✅' if bb_squeeze else '❌'}\n"
+                    debug_text += f"    - EMA Crossover: {'✅' if ema_crossover else '❌'}\n"
+                    debug_text += f"    - Bullish Candle: {'✅' if bullish_candle else '❌'}\n"
+                    
+                    triggers_ok = len(triggers) >= 2
+                    debug_text += f"  <b>Triggers Result:</b> {'✅ PASS' if triggers_ok else '❌ FAIL'} (need ≥2)\n\n"
+                    
+                    if triggers_ok:
+                        debug_text += f"  <b>🎯 SIGNAL WOULD BE GENERATED!</b>\n"
+                    else:
+                        debug_text += f"  <b>❌ No signal: Need ≥2 triggers</b>\n"
+                else:
+                    debug_text += f"  <b>❌ No signal: Trend filter failed</b>\n"
+            else:
+                debug_text += f"  ❌ Insufficient data for signal detection\n"
+        
+        debug_text += f"\n<b>Scanner Settings:</b>\n"
+        debug_text += f"  - Scan interval: {settings.scan_interval_sec}s\n"
+        debug_text += f"  - Max concurrent signals: {settings.max_concurrent_signals}\n"
+        debug_text += f"  - Signal expiry: {settings.signal_expiry_hours}h\n"
+        
+        await message.answer(debug_text, parse_mode="HTML")
+        
+    except Exception as e:
+        logger.exception(f"Error in debug scanner: {e}")
+        await message.answer(f"❌ Debug error: {str(e)}")
+
+
+@router.message(Command("force_scan"))
+async def cmd_force_scan(message: Message, **kwargs):
+    """Handle /force_scan command to force immediate market scan"""
+    try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        # Get scanner from main app (we'll need to pass it via middleware)
+        # For now, let's create a simple scan
+        settings = get_settings()
+        enabled_pairs = await db_repo.get_enabled_pairs()
+        
+        if not enabled_pairs:
+            await message.answer("⚠️ No enabled pairs to scan. Use /pairs to add some.")
+            return
+        
+        await message.answer("🔄 Starting forced scan...")
+        
+        # Create services
+        mds = MarketDataService()
+        ta = TechnicalAnalysis()
+        rm = RiskManager()
+        
+        # Get active signals to avoid duplicates
+        active_signals = await db_repo.get_active_signals()
+        active_symbols = {signal.symbol for signal in active_signals}
+        
+        # Prepare symbols list
+        symbols = [pair.symbol for pair in enabled_pairs if pair.symbol not in active_symbols]
+        
+        if not symbols:
+            await message.answer("ℹ️ All pairs have active signals, skipping scan")
+            return
+        
+        # Required timeframes
+        timeframes = [settings.trend_timeframe, settings.entry_timeframe, settings.confirmation_timeframe]
+        
+        # Fetch market data for all symbols and timeframes
+        market_data = await mds.get_multiple_ohlcv(symbols, timeframes)
+        
+        # Detect signals using simplified logic
+        signals_found = 0
+        for symbol, tf_data in market_data.items():
+            try:
+                trend_df = tf_data.get(settings.trend_timeframe)
+                entry_df = tf_data.get(settings.entry_timeframe)
+                confirmation_df = tf_data.get(settings.confirmation_timeframe)
+                
+                if not all([df is not None and not df.empty for df in [trend_df, entry_df, confirmation_df]]):
+                    continue
+                
+                # Check minimum data requirements
+                if len(trend_df) < 200 or len(entry_df) < 50 or len(confirmation_df) < 20:
+                    continue
+                
+                # Apply trend filter (must pass)
+                trend_bullish = ta.is_trend_bullish(trend_df)
+                entry_trend_bullish = ta.is_trend_bullish(entry_df)
+                rsi_neutral = ta.is_rsi_neutral_bullish(trend_df)
+                
+                if not (trend_bullish and entry_trend_bullish and rsi_neutral):
+                    continue
+                
+                # Check entry triggers (need at least 2)
+                triggers = []
+                if ta.check_breakout_retest(entry_df):
+                    triggers.append("breakout_retest")
+                if ta.check_bollinger_squeeze_expansion(entry_df):
+                    triggers.append("bb_squeeze_expansion")
+                if ta.check_ema_crossover(entry_df):
+                    triggers.append("ema_crossover")
+                if ta.check_bullish_candle(confirmation_df):
+                    triggers.append("bullish_candle")
+                
+                if len(triggers) < 2:
+                    continue
+                
+                # Calculate signal parameters
+                entry_price = entry_df['close'].iloc[-1]
+                stop_loss = ta.calculate_stop_loss(entry_df, entry_price)
+                
+                # Validate risk parameters
+                risk_pct = settings.default_risk_pct
+                is_valid, error_msg = rm.validate_risk_parameters(risk_pct, entry_price, stop_loss)
+                
+                if not is_valid:
+                    continue
+                
+                # Calculate take profits
+                tp1, tp2 = rm.calculate_take_profits(entry_price, stop_loss)
+                
+                # Create signal in database
+                signal = await db_repo.create_signal(
+                    symbol=symbol,
+                    timeframe=settings.entry_timeframe,
+                    entry_price=round(entry_price, 6),
+                    stop_loss=round(stop_loss, 6),
+                    take_profit_1=round(tp1, 6),
+                    take_profit_2=round(tp2, 6),
+                    grade="B",  # Default grade
+                    risk_level=risk_pct,
+                    reason=f"Forced scan: {', '.join(triggers)}",
+                    expires_at=datetime.utcnow() + timedelta(hours=settings.signal_expiry_hours)
+                )
+                
+                signals_found += 1
+                logger.info(f"Forced scan signal: {symbol} {signal.grade}")
+                
+            except Exception as e:
+                logger.error(f"Error in forced scan for {symbol}: {e}")
+        
+        await message.answer(f"✅ Forced scan completed. Found {signals_found} signals.")
+        
+    except Exception as e:
+        logger.exception(f"Error in force scan: {e}")
+        await message.answer(f"❌ Force scan error: {str(e)}")
+
+
+@router.message(Command("easy_mode"))
+async def cmd_easy_mode(message: Message, **kwargs):
+    """Handle /easy_mode command to enable easier signal detection"""
+    try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        # For now, just show info about easy mode
+        await message.answer(
+            "🟢 <b>Easy Mode</b>\n\n"
+            "Easy mode uses more lenient conditions:\n"
+            "• Trend filter: Only price > EMA50 (15m)\n"
+            "• Entry triggers: Need ≥1 instead of ≥2\n"
+            "• Triggers: EMA crossover, price above EMA9, volume increase, any bullish candle\n\n"
+            "This should generate more signals for testing.\n\n"
+            "To enable easy mode, the scanner needs to be updated to use EasySignalDetector instead of SignalDetector.",
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        logger.exception(f"Error in easy mode: {e}")
+        await message.answer(f"❌ Easy mode error: {str(e)}")
+
+
 def register_handlers(dp):
     """Register all handlers with the dispatcher"""
     dp.include_router(router)

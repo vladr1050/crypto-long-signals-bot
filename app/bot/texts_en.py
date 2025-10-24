@@ -61,6 +61,8 @@ Use /risk command. Default is 0.7% per trade.
 • /health — quick health check (DB + exchange reachability)
 • /mock_signal — send a test signal to yourself (delivery check)
 • /check — pick a pair and get a current status: trend filter, entry triggers and explanation why it's not a long now (if conditions are not met)
+• /debug_scanner — detailed scanner diagnostics (pairs, signals, detection logic)
+• /force_scan — force immediate market scan to test signal detection
 
 <b>⚠️ Important Disclaimers:</b>
 • This is NOT financial advice
