@@ -872,76 +872,48 @@ async def cmd_force_scan(message: Message, **kwargs):
         # Fetch market data for all symbols and timeframes
         market_data = await mds.get_multiple_ohlcv(symbols, timeframes)
         
-        # Detect signals using simplified logic
+        # Use appropriate detector based on settings
+        from app.core.signals.easy_detector import EasySignalDetector
+        
+        if settings.use_easy_detector:
+            detector = EasySignalDetector(ta, rm)
+            logger.info("Force scan using EasySignalDetector")
+        else:
+            from app.core.signals.detector import SignalDetector
+            detector = SignalDetector(ta, rm)
+            logger.info("Force scan using SignalDetector")
+        
+        # Detect signals using the appropriate detector
+        signals = detector.detect_signals(market_data)
+        
+        # Process signals
         signals_found = 0
-        for symbol, tf_data in market_data.items():
+        for signal_data in signals:
             try:
-                trend_df = tf_data.get(settings.trend_timeframe)
-                entry_df = tf_data.get(settings.entry_timeframe)
-                confirmation_df = tf_data.get(settings.confirmation_timeframe)
-                
-                if not all([df is not None and not df.empty for df in [trend_df, entry_df, confirmation_df]]):
+                # Check if we should generate this signal
+                current_signals = await db_repo.get_active_signals()
+                if not detector.should_generate_signal(signal_data['symbol'], current_signals):
                     continue
-                
-                # Check minimum data requirements
-                if len(trend_df) < 200 or len(entry_df) < 50 or len(confirmation_df) < 20:
-                    continue
-                
-                # Apply trend filter (must pass)
-                trend_bullish = ta.is_trend_bullish(trend_df)
-                entry_trend_bullish = ta.is_trend_bullish(entry_df)
-                rsi_neutral = ta.is_rsi_neutral_bullish(trend_df)
-                
-                if not (trend_bullish and entry_trend_bullish and rsi_neutral):
-                    continue
-                
-                # Check entry triggers (need at least 2)
-                triggers = []
-                if ta.check_breakout_retest(entry_df):
-                    triggers.append("breakout_retest")
-                if ta.check_bollinger_squeeze_expansion(entry_df):
-                    triggers.append("bb_squeeze_expansion")
-                if ta.check_ema_crossover(entry_df):
-                    triggers.append("ema_crossover")
-                if ta.check_bullish_candle(confirmation_df):
-                    triggers.append("bullish_candle")
-                
-                if len(triggers) < 2:
-                    continue
-                
-                # Calculate signal parameters
-                entry_price = entry_df['close'].iloc[-1]
-                stop_loss = ta.calculate_stop_loss(entry_df, entry_price)
-                
-                # Validate risk parameters
-                risk_pct = settings.default_risk_pct
-                is_valid, error_msg = rm.validate_risk_parameters(risk_pct, entry_price, stop_loss)
-                
-                if not is_valid:
-                    continue
-                
-                # Calculate take profits
-                tp1, tp2 = rm.calculate_take_profits(entry_price, stop_loss)
                 
                 # Create signal in database
                 signal = await db_repo.create_signal(
-                    symbol=symbol,
-                    timeframe=settings.entry_timeframe,
-                    entry_price=round(entry_price, 6),
-                    stop_loss=round(stop_loss, 6),
-                    take_profit_1=round(tp1, 6),
-                    take_profit_2=round(tp2, 6),
-                    grade="B",  # Default grade
-                    risk_level=risk_pct,
-                    reason=f"Forced scan: {', '.join(triggers)}",
-                    expires_at=datetime.utcnow() + timedelta(hours=settings.signal_expiry_hours)
+                    symbol=signal_data['symbol'],
+                    timeframe=signal_data['timeframe'],
+                    entry_price=signal_data['entry_price'],
+                    stop_loss=signal_data['stop_loss'],
+                    take_profit_1=signal_data['take_profit_1'],
+                    take_profit_2=signal_data['take_profit_2'],
+                    grade=signal_data['grade'],
+                    risk_level=signal_data['risk_level'],
+                    reason=signal_data['reason'],
+                    expires_at=signal_data['expires_at']
                 )
                 
                 signals_found += 1
-                logger.info(f"Forced scan signal: {symbol} {signal.grade}")
+                logger.info(f"Forced scan signal: {signal.symbol} {signal.grade}")
                 
             except Exception as e:
-                logger.error(f"Error in forced scan for {symbol}: {e}")
+                logger.error(f"Error processing forced scan signal for {signal_data.get('symbol', 'unknown')}: {e}")
         
         await message.answer(f"✅ Forced scan completed. Found {signals_found} signals.")
         
@@ -952,25 +924,77 @@ async def cmd_force_scan(message: Message, **kwargs):
 
 @router.message(Command("easy_mode"))
 async def cmd_easy_mode(message: Message, **kwargs):
-    """Handle /easy_mode command to enable easier signal detection"""
+    """Handle /easy_mode command to toggle easy signal detection"""
     try:
-        db_repo = _get_db_repo_from_kwargs(kwargs)
+        settings = get_settings()
         
-        # For now, just show info about easy mode
-        await message.answer(
-            "🟢 <b>Easy Mode</b>\n\n"
-            "Easy mode uses more lenient conditions:\n"
-            "• Trend filter: Only price > EMA50 (15m)\n"
-            "• Entry triggers: Need ≥1 instead of ≥2\n"
-            "• Triggers: EMA crossover, price above EMA9, volume increase, any bullish candle\n\n"
-            "This should generate more signals for testing.\n\n"
-            "To enable easy mode, the scanner needs to be updated to use EasySignalDetector instead of SignalDetector.",
-            parse_mode="HTML"
-        )
+        # Toggle easy mode
+        current_mode = settings.use_easy_detector
+        new_mode = not current_mode
+        
+        # Update the global settings (this is a simple approach)
+        # In production, you'd want to store this in database
+        settings.use_easy_detector = new_mode
+        
+        if new_mode:
+            await message.answer(
+                "🟢 <b>Easy Mode ENABLED</b>\n\n"
+                "Easy mode uses more lenient conditions:\n"
+                "• Trend filter: Only price > EMA50 (15m)\n"
+                "• Entry triggers: Need ≥1 instead of ≥2\n"
+                "• Triggers: EMA crossover, price above EMA9, volume increase, any bullish candle\n\n"
+                "This should generate more signals for testing.\n\n"
+                "Use /force_scan to test immediately.",
+                parse_mode="HTML"
+            )
+        else:
+            await message.answer(
+                "🔴 <b>Easy Mode DISABLED</b>\n\n"
+                "Back to conservative strategy:\n"
+                "• Trend filter: Price > EMA200 (1h) AND > EMA50 (15m) AND RSI 45-65\n"
+                "• Entry triggers: Need ≥2 out of 4\n"
+                "• More strict conditions for higher quality signals\n\n"
+                "Use /force_scan to test immediately.",
+                parse_mode="HTML"
+            )
         
     except Exception as e:
         logger.exception(f"Error in easy mode: {e}")
         await message.answer(f"❌ Easy mode error: {str(e)}")
+
+
+@router.message(Command("mode_status"))
+async def cmd_mode_status(message: Message, **kwargs):
+    """Handle /mode_status command to check current detection mode"""
+    try:
+        settings = get_settings()
+        
+        if settings.use_easy_detector:
+            mode_text = "🟢 <b>Easy Mode ACTIVE</b>"
+            conditions_text = (
+                "• Trend filter: Only price > EMA50 (15m)\n"
+                "• Entry triggers: Need ≥1 out of 4\n"
+                "• Triggers: EMA crossover, price above EMA9, volume increase, any bullish candle"
+            )
+        else:
+            mode_text = "🔴 <b>Conservative Mode ACTIVE</b>"
+            conditions_text = (
+                "• Trend filter: Price > EMA200 (1h) AND > EMA50 (15m) AND RSI 45-65\n"
+                "• Entry triggers: Need ≥2 out of 4\n"
+                "• Triggers: Breakout & retest, BB squeeze, EMA crossover, bullish candle"
+            )
+        
+        await message.answer(
+            f"{mode_text}\n\n"
+            f"<b>Current conditions:</b>\n{conditions_text}\n\n"
+            f"Use /easy_mode to toggle between modes.\n"
+            f"Use /force_scan to test current mode.",
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        logger.exception(f"Error in mode status: {e}")
+        await message.answer(f"❌ Mode status error: {str(e)}")
 
 
 def register_handlers(dp):

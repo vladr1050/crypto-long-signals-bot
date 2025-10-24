@@ -12,6 +12,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.config.settings import get_settings
 from app.core.data.market import MarketDataService
 from app.core.signals.detector import SignalDetector
+from app.core.signals.easy_detector import EasySignalDetector
 from app.services.notifier import NotificationService
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,13 @@ class MarketScanner:
         self.signal_detector = signal_detector
         self.notifier = notifier
         self.settings = settings
+        
+        # Add easy detector for testing
+        from app.core.indicators.ta import TechnicalAnalysis
+        from app.core.risk.sizing import RiskManager
+        ta = TechnicalAnalysis()
+        risk_manager = RiskManager()
+        self.easy_detector = EasySignalDetector(ta, risk_manager)
         
         # Initialize scheduler
         self.scheduler = AsyncIOScheduler()
@@ -126,8 +134,13 @@ class MarketScanner:
             logger.info(f"Fetching data for {len(symbols)} symbols")
             market_data = await self.market_data.get_multiple_ohlcv(symbols, timeframes)
             
-            # Detect signals
-            signals = self.signal_detector.detect_signals(market_data)
+            # Detect signals using appropriate detector
+            if self.settings.use_easy_detector:
+                signals = self.easy_detector.detect_signals(market_data)
+                logger.info("Using EasySignalDetector for signal detection")
+            else:
+                signals = self.signal_detector.detect_signals(market_data)
+                logger.info("Using SignalDetector for signal detection")
             
             if signals:
                 logger.info(f"🎯 Detected {len(signals)} signals")

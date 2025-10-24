@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     bb_std: float = 2.0
     atr_period: int = 14
     
+    # Easy mode configuration
+    use_easy_detector: bool = Field(default=False, env="USE_EASY_DETECTOR")
+    
     # Timeframes
     trend_timeframe: str = "1h"
     entry_timeframe: str = "15m"
