@@ -104,7 +104,7 @@ class EasySignalDetector:
                 return None
             
             # Calculate take profits
-            tp1, tp2 = self.risk_manager.calculate_take_profits(entry_price, stop_loss)
+            tp1, tp2 = self.risk_manager.calculate_take_profits(entry_price, stop_loss, risk_pct)
             
             # Calculate signal grade (always B for easy signals)
             grade = "B"

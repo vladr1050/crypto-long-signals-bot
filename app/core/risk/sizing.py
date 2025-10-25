@@ -57,13 +57,14 @@ class RiskManager:
             logger.error(f"Error calculating position size: {e}")
             return 0.0
     
-    def calculate_take_profits(self, entry_price: float, stop_loss: float) -> Tuple[float, float]:
+    def calculate_take_profits(self, entry_price: float, stop_loss: float, risk_pct: float = None) -> Tuple[float, float]:
         """
-        Calculate take profit levels (1R and 2R)
+        Calculate take profit levels based on user's risk percentage
         
         Args:
             entry_price: Entry price
             stop_loss: Stop loss price
+            risk_pct: User's risk percentage (if None, uses 1R/2R logic)
             
         Returns:
             Tuple of (TP1, TP2) prices
@@ -73,12 +74,18 @@ class RiskManager:
                 logger.warning("Entry price must be greater than stop loss")
                 return entry_price, entry_price
             
-            # Calculate risk (R)
-            risk = entry_price - stop_loss
-            
-            # Calculate take profits
-            tp1 = entry_price + risk  # 1R
-            tp2 = entry_price + (2 * risk)  # 2R
+            if risk_pct is not None:
+                # Calculate TP1 and TP2 based on user's risk percentage
+                tp1_pct = risk_pct  # TP1 = same as risk
+                tp2_pct = risk_pct * 2  # TP2 = 2x risk
+                
+                tp1 = entry_price * (1 + tp1_pct / 100)
+                tp2 = entry_price * (1 + tp2_pct / 100)
+            else:
+                # Fallback to 1R/2R logic
+                risk = entry_price - stop_loss
+                tp1 = entry_price + risk  # 1R
+                tp2 = entry_price + (2 * risk)  # 2R
             
             return tp1, tp2
             
