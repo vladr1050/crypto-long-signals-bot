@@ -96,6 +96,9 @@ async def main():
             await db_repo.set_setting("use_easy_detector", "false")
             logger.info("✅ Initialized default easy mode setting")
         
+        # Add snooze_until column if it doesn't exist
+        await db_repo.add_snooze_column_if_not_exists()
+        
     except Exception as e:
         logger.error(f"❌ Database initialization failed: {e}")
         # Try to create tables manually

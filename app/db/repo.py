@@ -4,7 +4,7 @@ Database repository for Crypto Long Signals Bot
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from sqlalchemy import and_, desc, select
+from sqlalchemy import and_, desc, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -335,3 +335,33 @@ class DatabaseRepository:
         except Exception as e:
             logger.error(f"Error getting user active signals count: {e}")
             return 0
+    
+    async def add_snooze_column_if_not_exists(self) -> bool:
+        """Add snooze_until column to signals table if it doesn't exist"""
+        try:
+            async with self.async_session() as session:
+                # Check if column exists
+                result = await session.execute(
+                    text("""
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_name = 'signals' 
+                        AND column_name = 'snooze_until'
+                    """)
+                )
+                column_exists = result.fetchone() is not None
+                
+                if not column_exists:
+                    # Add the column
+                    await session.execute(
+                        text("ALTER TABLE signals ADD COLUMN snooze_until TIMESTAMP")
+                    )
+                    await session.commit()
+                    logger.info("✅ Added snooze_until column to signals table")
+                    return True
+                else:
+                    logger.info("✅ snooze_until column already exists")
+                    return True
+        except Exception as e:
+            logger.error(f"Error adding snooze_until column: {e}")
+            return False
