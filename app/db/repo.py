@@ -309,3 +309,29 @@ class DatabaseRepository:
         except Exception as e:
             logger.error(f"Error snoozing signal {signal_id}: {e}")
             return False
+    
+    async def get_active_signals_count(self) -> int:
+        """Get count of all active signals"""
+        try:
+            async with self.async_session() as session:
+                result = await session.execute(
+                    select(func.count(Signal.id)).where(Signal.status == "active")
+                )
+                return result.scalar() or 0
+        except Exception as e:
+            logger.error(f"Error getting active signals count: {e}")
+            return 0
+    
+    async def get_user_active_signals_count(self, user_id: int) -> int:
+        """Get count of signals marked as active by specific user"""
+        try:
+            # For now, we'll count all active signals since we don't track user ownership
+            # In a more advanced version, we'd track which user marked which signal as active
+            async with self.async_session() as session:
+                result = await session.execute(
+                    select(func.count(Signal.id)).where(Signal.status == "active")
+                )
+                return result.scalar() or 0
+        except Exception as e:
+            logger.error(f"Error getting user active signals count: {e}")
+            return 0

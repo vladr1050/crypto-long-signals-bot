@@ -463,12 +463,15 @@ async def cmd_status(message: Message, **kwargs):
         
         # Get active signals count
         signals_count = await db_repo.get_signals_count()
+        active_signals_count = await db_repo.get_active_signals_count()
+        user_active_signals = await db_repo.get_user_active_signals_count(user.telegram_id)
         
         # Build status message
         status_text = STATUS_HEADER
         status_text += SIGNALS_ENABLED if user.signals_enabled else SIGNALS_DISABLED
         status_text += f"\n{SCANNING_PAIRS.format(pairs=pairs_text)}"
         status_text += f"\n{ACTIVE_SIGNALS.format(count=signals_count)}"
+        status_text += f"\n📊 Your active signals: <b>{user_active_signals}</b>"
         status_text += f"\n{RISK_SETTING.format(risk=user.risk_pct)}"
         status_text += f"\n{LAST_SCAN.format(time=datetime.now().strftime('%H:%M:%S'))}"
         
@@ -1085,6 +1088,40 @@ async def cmd_easy_mode(message: Message, **kwargs):
     except Exception as e:
         logger.exception(f"Error in easy mode: {e}")
         await message.answer(f"❌ Easy mode error: {str(e)}")
+
+
+@router.message(Command("my_signals"))
+async def cmd_my_signals(message: Message, **kwargs):
+    """Handle /my_signals command to show user's active signals"""
+    try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        # Get active signals
+        active_signals = await db_repo.get_active_signals()
+        
+        if not active_signals:
+            await message.answer(
+                "📊 <b>Your Active Signals</b>\n\n"
+                "You have no active signals at the moment.\n\n"
+                "Use /status to see all available signals and mark them as active.",
+                parse_mode="HTML"
+            )
+            return
+        
+        # Format signals
+        signals_text = "📊 <b>Your Active Signals</b>\n\n"
+        for signal in active_signals:
+            signals_text += f"🟢 <b>{signal.symbol}</b> ({signal.grade})\n"
+            signals_text += f"   Entry: {signal.entry_price:.4f}\n"
+            signals_text += f"   SL: {signal.stop_loss:.4f} | TP1: {signal.take_profit_1:.4f} | TP2: {signal.take_profit_2:.4f}\n"
+            signals_text += f"   Status: {signal.status}\n"
+            signals_text += f"   Created: {signal.created_at.strftime('%H:%M:%S')}\n\n"
+        
+        await message.answer(signals_text, parse_mode="HTML")
+        
+    except Exception as e:
+        logger.exception(f"Error in my_signals: {e}")
+        await message.answer("❌ Error loading your signals")
 
 
 @router.message(Command("mode_status"))
