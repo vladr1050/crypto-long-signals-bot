@@ -310,11 +310,27 @@ class TechnicalAnalysis:
             # Take the larger (more conservative) stop loss
             calculated_sl = max(sl_swing, sl_atr)
             
+            # Log detailed calculation for debugging
+            sl_swing_pct = ((entry_price - sl_swing) / entry_price) * 100
+            sl_atr_pct = ((entry_price - sl_atr) / entry_price) * 100
+            calculated_sl_pct = ((entry_price - calculated_sl) / entry_price) * 100
+            
+            logger.debug(f"SL calculation: entry={entry_price:.4f}, support={support:.4f}, atr={current_atr:.4f}")
+            logger.debug(f"SL methods: swing={sl_swing:.4f} ({sl_swing_pct:.2f}%), atr={sl_atr:.4f} ({sl_atr_pct:.2f}%)")
+            logger.debug(f"Calculated SL: {calculated_sl:.4f} ({calculated_sl_pct:.2f}%)")
+            
             # Ensure minimum distance for Easy Mode
             if is_easy_mode:
-                min_distance_pct = 0.15  # 0.15% minimum for Easy Mode
+                min_distance_pct = 0.5  # 0.5% minimum for Easy Mode (more reasonable)
                 min_sl = entry_price * (1 - min_distance_pct / 100)
-                calculated_sl = max(calculated_sl, min_sl)
+                if calculated_sl < min_sl:
+                    logger.debug(f"Easy Mode: forcing minimum SL {min_sl:.4f} ({min_distance_pct}%)")
+                    calculated_sl = min_sl
+                else:
+                    logger.debug(f"Easy Mode: using calculated SL {calculated_sl:.4f}")
+            
+            final_sl_pct = ((entry_price - calculated_sl) / entry_price) * 100
+            logger.debug(f"Final SL: {calculated_sl:.4f} ({final_sl_pct:.2f}%)")
             
             return calculated_sl
             

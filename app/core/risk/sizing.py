@@ -155,7 +155,7 @@ class RiskManager:
             
         except Exception as e:
             logger.error(f"Error calculating risk-reward ratio: {e}")
-            return 0.0
+        return 0.0
     
     def validate_risk_parameters(
         self, 
@@ -190,7 +190,7 @@ class RiskManager:
             
             # Check stop loss distance (more lenient for Easy Mode)
             stop_loss_pct = ((entry_price - stop_loss) / entry_price) * 100
-            min_distance = 0.1 if is_easy_mode else 0.5  # 0.1% for Easy Mode, 0.5% for Conservative
+            min_distance = 0.3 if is_easy_mode else 0.5  # 0.3% for Easy Mode, 0.5% for Conservative
             max_distance = 15.0 if is_easy_mode else 10.0  # 15% for Easy Mode, 10% for Conservative
             
             if stop_loss_pct < min_distance:
