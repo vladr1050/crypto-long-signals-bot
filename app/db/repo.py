@@ -258,3 +258,15 @@ class DatabaseRepository:
         except Exception as e:
             logger.error(f"Error getting users with signals enabled: {e}")
             return []
+    
+    async def get_signal_by_id(self, signal_id: int) -> Optional[Signal]:
+        """Get signal by ID"""
+        try:
+            async with self.async_session() as session:
+                result = await session.execute(
+                    select(Signal).where(Signal.id == signal_id)
+                )
+                return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"Error getting signal by ID {signal_id}: {e}")
+            return None

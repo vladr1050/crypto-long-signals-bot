@@ -198,6 +198,58 @@ async def cmd_check(message: Message, **kwargs):
         await message.answer("❌ Check failed. See logs.")
 
 
+@router.callback_query(F.data.startswith("explain_signal:"))
+async def callback_explain_signal(callback: CallbackQuery, **kwargs):
+    """Handle explain signal callback"""
+    try:
+        signal_id = int(callback.data.split(":")[1])
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        # Get signal from database
+        signal = await db_repo.get_signal_by_id(signal_id)
+        if not signal:
+            await callback.answer("Signal not found", show_alert=True)
+            return
+        
+        # Create detailed explanation
+        explanation = f"""
+🔍 <b>Signal Explanation</b>
+
+<b>Symbol:</b> {signal.symbol}
+<b>Grade:</b> {signal.grade} ({'Strong' if signal.grade == 'A' else 'Good' if signal.grade == 'B' else 'High-risk'})
+<b>Timeframe:</b> {signal.timeframe}
+
+<b>Entry Price:</b> {signal.entry_price:.4f}
+<b>Stop Loss:</b> {signal.stop_loss:.4f} ({((signal.entry_price - signal.stop_loss) / signal.entry_price * 100):.1f}%)
+<b>Take Profit 1:</b> {signal.take_profit_1:.4f} ({((signal.take_profit_1 - signal.entry_price) / signal.entry_price * 100):.1f}%)
+<b>Take Profit 2:</b> {signal.take_profit_2:.4f} ({((signal.take_profit_2 - signal.entry_price) / signal.entry_price * 100):.1f}%)
+
+<b>Risk Level:</b> {signal.risk_level}%
+<b>Reason:</b> {signal.reason}
+
+<b>Created:</b> {signal.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC
+<b>Expires:</b> {signal.expires_at.strftime('%Y-%m-%d %H:%M:%S')} UTC
+
+<b>Strategy:</b> Easy Mode (testing)
+• Trend filter: NONE (always pass)
+• Entry triggers: Need ≥1 out of 4
+• Triggers: EMA crossover, price above EMA9, volume increase, any bullish candle
+
+⚠️ <b>Disclaimer:</b> This is for testing purposes only. Not financial advice.
+        """
+        
+        await callback.message.edit_text(
+            explanation,
+            parse_mode="HTML",
+            reply_markup=get_back_keyboard()
+        )
+        await callback.answer()
+        
+    except Exception as e:
+        logger.exception(f"Error explaining signal: {e}")
+        await callback.answer("Error explaining signal", show_alert=True)
+
+
 @router.callback_query(F.data.startswith("check_pair:"))
 async def callback_check_pair(callback: CallbackQuery, **kwargs):
     """Analyze selected pair: trend, entry triggers, and reason not-long."""
