@@ -107,11 +107,16 @@ class MarketScanner:
                 logger.warning("No enabled pairs found")
                 return
             
-            # Get active signals to avoid duplicates
+            # Get active signals to check limits
             active_signals = await self.db_repo.get_active_signals()
             active_symbols = {signal.symbol for signal in active_signals}
             
-            # Prepare symbols list
+            # Check if we can generate more signals
+            if len(active_signals) >= self.settings.max_concurrent_signals:
+                logger.info(f"Max concurrent signals reached ({len(active_signals)}/{self.settings.max_concurrent_signals}), skipping scan")
+                return
+            
+            # Prepare symbols list - exclude only pairs that already have signals
             symbols = [pair.symbol for pair in pairs if pair.symbol not in active_symbols]
             
             # Debug: log symbols
@@ -218,10 +223,7 @@ class MarketScanner:
         """Process detected signals"""
         try:
             for signal_data in signals:
-                # Check if we should generate this signal
-                current_signals = await self.db_repo.get_active_signals()
-                if not self.signal_detector.should_generate_signal(signal_data['symbol'], current_signals):
-                    continue
+                # Signal filtering already done in _scan_markets
                 
                 # Create signal in database
                 signal = await self.db_repo.create_signal(
