@@ -72,6 +72,7 @@ class Signal(Base):
     status = Column(String(20), default=SignalStatus.PENDING)
     expires_at = Column(DateTime, nullable=False)
     triggered_at = Column(DateTime, nullable=True)
+    snooze_until = Column(DateTime, nullable=True)  # For snooze functionality
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

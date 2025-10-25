@@ -198,6 +198,68 @@ async def cmd_check(message: Message, **kwargs):
         await message.answer("❌ Check failed. See logs.")
 
 
+@router.callback_query(F.data.startswith("mark_active:"))
+async def callback_mark_active(callback: CallbackQuery, **kwargs):
+    """Handle mark active callback"""
+    try:
+        signal_id = int(callback.data.split(":")[1])
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        # Update signal status to active
+        success = await db_repo.update_signal_status(signal_id, "active")
+        
+        if success:
+            await callback.answer("✅ Signal marked as active")
+        else:
+            await callback.answer("❌ Failed to mark signal as active", show_alert=True)
+        
+    except Exception as e:
+        logger.exception(f"Error marking signal active: {e}")
+        await callback.answer("Error marking signal active", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("snooze_signal:"))
+async def callback_snooze_signal(callback: CallbackQuery, **kwargs):
+    """Handle snooze signal callback"""
+    try:
+        signal_id = int(callback.data.split(":")[1])
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        # Snooze signal for 1 hour
+        from datetime import datetime, timedelta
+        snooze_until = datetime.utcnow() + timedelta(hours=1)
+        success = await db_repo.snooze_signal(signal_id, snooze_until)
+        
+        if success:
+            await callback.answer("😴 Signal snoozed for 1 hour")
+        else:
+            await callback.answer("❌ Failed to snooze signal", show_alert=True)
+        
+    except Exception as e:
+        logger.exception(f"Error snoozing signal: {e}")
+        await callback.answer("Error snoozing signal", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("mute_pair:"))
+async def callback_mute_pair(callback: CallbackQuery, **kwargs):
+    """Handle mute pair callback"""
+    try:
+        symbol = callback.data.split(":")[1]
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        # Disable pair
+        success = await db_repo.toggle_pair(symbol)
+        
+        if success:
+            await callback.answer(f"🔇 Pair {symbol} muted")
+        else:
+            await callback.answer(f"❌ Failed to mute pair {symbol}", show_alert=True)
+        
+    except Exception as e:
+        logger.exception(f"Error muting pair: {e}")
+        await callback.answer("Error muting pair", show_alert=True)
+
+
 @router.callback_query(F.data.startswith("explain_signal:"))
 async def callback_explain_signal(callback: CallbackQuery, **kwargs):
     """Handle explain signal callback"""

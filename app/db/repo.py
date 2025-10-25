@@ -270,3 +270,42 @@ class DatabaseRepository:
         except Exception as e:
             logger.error(f"Error getting signal by ID {signal_id}: {e}")
             return None
+    
+    async def update_signal_status(self, signal_id: int, status: str) -> bool:
+        """Update signal status"""
+        try:
+            async with self.async_session() as session:
+                result = await session.execute(
+                    select(Signal).where(Signal.id == signal_id)
+                )
+                signal = result.scalar_one_or_none()
+                
+                if signal:
+                    signal.status = status
+                    signal.updated_at = datetime.utcnow()
+                    await session.commit()
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"Error updating signal status {signal_id}: {e}")
+            return False
+    
+    async def snooze_signal(self, signal_id: int, snooze_until: datetime) -> bool:
+        """Snooze signal until specified time"""
+        try:
+            async with self.async_session() as session:
+                result = await session.execute(
+                    select(Signal).where(Signal.id == signal_id)
+                )
+                signal = result.scalar_one_or_none()
+                
+                if signal:
+                    # Store original expiry time and set new expiry
+                    signal.snooze_until = snooze_until
+                    signal.updated_at = datetime.utcnow()
+                    await session.commit()
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"Error snoozing signal {signal_id}: {e}")
+            return False
