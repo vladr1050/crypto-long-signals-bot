@@ -57,14 +57,55 @@ class RiskManager:
             logger.error(f"Error calculating position size: {e}")
             return 0.0
     
-    def calculate_take_profits(self, entry_price: float, stop_loss: float, risk_pct: float = None) -> Tuple[float, float]:
+    def calculate_adaptive_position_size(
+        self, 
+        account_value: float, 
+        user_risk_pct: float, 
+        entry_price: float, 
+        stop_loss: float
+    ) -> float:
         """
-        Calculate take profit levels based on user's risk percentage
+        Calculate position size based on user's risk percentage and real market risk
+        
+        Args:
+            account_value: Total account value
+            user_risk_pct: User's desired risk percentage
+            entry_price: Entry price
+            stop_loss: Stop loss price
+            
+        Returns:
+            Position size in base currency
+        """
+        try:
+            if entry_price <= stop_loss:
+                logger.warning("Entry price must be greater than stop loss")
+                return 0.0
+            
+            # Calculate real market risk percentage
+            real_risk_pct = ((entry_price - stop_loss) / entry_price) * 100
+            
+            # Calculate how much of user's risk we can use
+            risk_multiplier = user_risk_pct / real_risk_pct
+            
+            # Calculate position size
+            position_value = account_value * risk_multiplier
+            position_size = position_value / entry_price
+            
+            return position_size
+            
+        except Exception as e:
+            logger.error(f"Error calculating adaptive position size: {e}")
+            return 0.0
+    
+    def calculate_take_profits(self, entry_price: float, stop_loss: float, tp1: float = None, tp2: float = None) -> Tuple[float, float]:
+        """
+        Use technical analysis take profits or fallback to 1R/2R logic
         
         Args:
             entry_price: Entry price
             stop_loss: Stop loss price
-            risk_pct: User's risk percentage (if None, uses 1R/2R logic)
+            tp1: Technical analysis TP1 (if provided)
+            tp2: Technical analysis TP2 (if provided)
             
         Returns:
             Tuple of (TP1, TP2) prices
@@ -74,20 +115,15 @@ class RiskManager:
                 logger.warning("Entry price must be greater than stop loss")
                 return entry_price, entry_price
             
-            if risk_pct is not None:
-                # Calculate TP1 and TP2 based on user's risk percentage
-                tp1_pct = risk_pct  # TP1 = same as risk
-                tp2_pct = risk_pct * 2  # TP2 = 2x risk
-                
-                tp1 = entry_price * (1 + tp1_pct / 100)
-                tp2 = entry_price * (1 + tp2_pct / 100)
+            if tp1 is not None and tp2 is not None:
+                # Use technical analysis take profits
+                return tp1, tp2
             else:
                 # Fallback to 1R/2R logic
                 risk = entry_price - stop_loss
                 tp1 = entry_price + risk  # 1R
                 tp2 = entry_price + (2 * risk)  # 2R
-            
-            return tp1, tp2
+                return tp1, tp2
             
         except Exception as e:
             logger.error(f"Error calculating take profits: {e}")

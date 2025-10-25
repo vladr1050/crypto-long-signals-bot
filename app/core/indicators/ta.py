@@ -312,3 +312,44 @@ class TechnicalAnalysis:
         except Exception as e:
             logger.error(f"Error calculating stop loss: {e}")
             return entry_price * 0.98  # Fallback: 2% below entry
+    
+    def calculate_technical_take_profits(self, df: pd.DataFrame, entry_price: float) -> Tuple[float, float]:
+        """
+        Calculate take profit levels based on technical analysis
+        
+        Args:
+            df: DataFrame with OHLCV data
+            entry_price: Entry price for the position
+            
+        Returns:
+            Tuple of (TP1, TP2) prices
+        """
+        try:
+            # Method 1: Resistance levels
+            _, resistance = self.calculate_support_resistance(df)
+            tp1_resistance = resistance * 0.995  # 0.5% below resistance
+            
+            # Method 2: ATR-based targets
+            atr = self.calculate_atr(df['high'], df['low'], df['close'])
+            current_atr = atr.iloc[-1]
+            tp1_atr = entry_price + (1.5 * current_atr)  # 1.5x ATR
+            tp2_atr = entry_price + (3.0 * current_atr)  # 3.0x ATR
+            
+            # Method 3: Bollinger Bands upper
+            _, bb_upper, _ = self.calculate_bollinger_bands(df['close'])
+            tp1_bb = bb_upper.iloc[-1]
+            
+            # Choose TP1: closest to entry but reasonable
+            tp1_candidates = [tp1_resistance, tp1_atr, tp1_bb]
+            tp1 = min([tp for tp in tp1_candidates if tp > entry_price], default=tp1_atr)
+            
+            # TP2: 2x the distance of TP1
+            tp1_distance = tp1 - entry_price
+            tp2 = entry_price + (2 * tp1_distance)
+            
+            return tp1, tp2
+            
+        except Exception as e:
+            logger.error(f"Error calculating technical take profits: {e}")
+            # Fallback: 1% and 2% above entry
+            return entry_price * 1.01, entry_price * 1.02

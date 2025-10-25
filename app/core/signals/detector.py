@@ -93,6 +93,9 @@ class SignalDetector:
             entry_price = entry_df['close'].iloc[-1]
             stop_loss = self.ta.calculate_stop_loss(entry_df, entry_price)
             
+            # Calculate technical take profits
+            tp1, tp2 = self.ta.calculate_technical_take_profits(entry_df, entry_price)
+            
             # Validate risk parameters
             risk_pct = user_risk_pct if user_risk_pct is not None else self.settings.default_risk_pct
             is_valid, error_msg = self.risk_manager.validate_risk_parameters(
@@ -103,8 +106,8 @@ class SignalDetector:
                 logger.warning(f"Invalid risk parameters for {symbol}: {error_msg}")
                 return None
             
-            # Calculate take profits
-            tp1, tp2 = self.risk_manager.calculate_take_profits(entry_price, stop_loss, risk_pct)
+            # Use technical take profits
+            tp1, tp2 = self.risk_manager.calculate_take_profits(entry_price, stop_loss, tp1, tp2)
             
             # Calculate signal grade
             grade = self._calculate_signal_grade(triggers, entry_df, confirmation_df)

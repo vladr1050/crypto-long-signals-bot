@@ -96,13 +96,26 @@ class NotificationService:
             tp1_pct = round(((tp1 - entry) / entry) * 100, 1)
             tp2_pct = round(((tp2 - entry) / entry) * 100, 1)
             
-            # Position size: accept provided value or fallback to mock calc
+            # Position size: calculate based on user's risk and real market risk
             position_size = signal.get('position')
             if position_size is None:
                 try:
-                    position_size = round(1000 / entry, 4)  # Mock $1000 account
-                except Exception:
-                    position_size = 0
+                    # Get user's risk percentage
+                    user_risk_pct = signal.get('user_risk_pct', 1.0)  # Default 1%
+                    
+                    # Calculate adaptive position size
+                    from app.core.risk.sizing import RiskManager
+                    risk_manager = RiskManager()
+                    position_size = risk_manager.calculate_adaptive_position_size(
+                        account_value=1000,  # Mock $1000 account
+                        user_risk_pct=user_risk_pct,
+                        entry_price=entry,
+                        stop_loss=sl
+                    )
+                    position_size = round(position_size, 4)
+                except Exception as e:
+                    logger.error(f"Error calculating position size: {e}")
+                    position_size = round(1000 / entry, 4)  # Fallback
             
             # Build message
             message = SIGNAL_HEADER.format(
