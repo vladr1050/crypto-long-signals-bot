@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     )
     
     # Risk management
-    max_concurrent_signals: int = 3
+    max_concurrent_signals: int = 999  # Effectively unlimited
     max_holding_hours: int = 24
     min_volume_24h: float = 1000000  # $1M minimum volume
     

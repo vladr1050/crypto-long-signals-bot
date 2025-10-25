@@ -111,10 +111,7 @@ class MarketScanner:
             active_signals = await self.db_repo.get_active_signals()
             active_symbols = {signal.symbol for signal in active_signals}
             
-            # Check if we can generate more signals
-            if len(active_signals) >= self.settings.max_concurrent_signals:
-                logger.info(f"Max concurrent signals reached ({len(active_signals)}/{self.settings.max_concurrent_signals}), skipping scan")
-                return
+                # No signal limit - generate all suitable signals
             
             # Prepare symbols list - exclude only pairs that already have signals
             symbols = [pair.symbol for pair in pairs if pair.symbol not in active_symbols]
@@ -155,7 +152,8 @@ class MarketScanner:
             if not first_user:
                 logger.info("No users found")
                 return
-                
+            
+            # Detect signals
             if use_easy_detector:
                 signals = self.easy_detector.detect_signals(market_data, first_user.risk_pct)
             else:
