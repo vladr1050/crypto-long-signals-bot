@@ -338,6 +338,9 @@ class DatabaseRepository:
     
     async def add_snooze_column_if_not_exists(self) -> bool:
         """Add snooze_until column to signals table if it doesn't exist"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
             async with self.async_session() as session:
                 # Check if column exists
