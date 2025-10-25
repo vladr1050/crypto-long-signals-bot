@@ -924,10 +924,14 @@ async def cmd_force_scan(message: Message, **kwargs):
         # Fetch market data for all symbols and timeframes
         market_data = await mds.get_multiple_ohlcv(symbols, timeframes)
         
-        # Use appropriate detector based on settings
+        # Use appropriate detector based on database setting
         from app.core.signals.easy_detector import EasySignalDetector
         
-        if settings.use_easy_detector:
+        # Check database for current mode
+        easy_mode_str = await db_repo.get_setting("use_easy_detector")
+        use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+        
+        if use_easy_detector:
             detector = EasySignalDetector(ta, rm)
             logger.info("Force scan using EasySignalDetector")
         else:
@@ -978,14 +982,20 @@ async def cmd_force_scan(message: Message, **kwargs):
 async def cmd_easy_mode(message: Message, **kwargs):
     """Handle /easy_mode command to toggle easy signal detection"""
     try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         settings = get_settings()
         
+        # Get current mode from database
+        current_mode_str = await db_repo.get_setting("use_easy_detector")
+        current_mode = current_mode_str == "true" if current_mode_str else False
+        
         # Toggle easy mode
-        current_mode = settings.use_easy_detector
         new_mode = not current_mode
         
-        # Update the global settings (this is a simple approach)
-        # In production, you'd want to store this in database
+        # Save to database
+        await db_repo.set_setting("use_easy_detector", "true" if new_mode else "false")
+        
+        # Update the global settings
         settings.use_easy_detector = new_mode
         
         if new_mode:
@@ -1019,9 +1029,14 @@ async def cmd_easy_mode(message: Message, **kwargs):
 async def cmd_mode_status(message: Message, **kwargs):
     """Handle /mode_status command to check current detection mode"""
     try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
         settings = get_settings()
         
-        if settings.use_easy_detector:
+        # Get current mode from database
+        current_mode_str = await db_repo.get_setting("use_easy_detector")
+        is_easy_mode = current_mode_str == "true" if current_mode_str else False
+        
+        if is_easy_mode:
             mode_text = "🟢 <b>Easy Mode ACTIVE</b>"
             conditions_text = (
                 "• Trend filter: NONE (always pass)\n"

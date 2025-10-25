@@ -84,24 +84,36 @@ async def main():
     )
     dp = Dispatcher(storage=MemoryStorage())
     
-    # Initialize database
-    db_repo = DatabaseRepository(settings.database_url)
-    try:
-        await db_repo.initialize()
-        logger.info("✅ Database initialized successfully")
-    except Exception as e:
-        logger.error(f"❌ Database initialization failed: {e}")
-        # Try to create tables manually
-        try:
-            from app.db.models import Base
-            from sqlalchemy.ext.asyncio import create_async_engine
-            engine = create_async_engine(settings.database_url)
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            logger.info("✅ Database tables created manually")
-        except Exception as e2:
-            logger.error(f"❌ Manual table creation failed: {e2}")
-            raise
+            # Initialize database
+            db_repo = DatabaseRepository(settings.database_url)
+            try:
+                await db_repo.initialize()
+                logger.info("✅ Database initialized successfully")
+                
+                # Initialize default settings if not exist
+                easy_mode_setting = await db_repo.get_setting("use_easy_detector")
+                if easy_mode_setting is None:
+                    await db_repo.set_setting("use_easy_detector", "false")
+                    logger.info("✅ Initialized default easy mode setting")
+                
+            except Exception as e:
+                logger.error(f"❌ Database initialization failed: {e}")
+                # Try to create tables manually
+                try:
+                    from app.db.models import Base
+                    from sqlalchemy.ext.asyncio import create_async_engine
+                    engine = create_async_engine(settings.database_url)
+                    async with engine.begin() as conn:
+                        await conn.run_sync(Base.metadata.create_all)
+                    logger.info("✅ Database tables created manually")
+                    
+                    # Initialize default settings
+                    await db_repo.set_setting("use_easy_detector", "false")
+                    logger.info("✅ Initialized default easy mode setting")
+                    
+                except Exception as e2:
+                    logger.error(f"❌ Manual table creation failed: {e2}")
+                    raise
     
     # Register handlers
     register_handlers(dp)

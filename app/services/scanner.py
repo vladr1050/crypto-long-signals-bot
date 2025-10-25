@@ -135,7 +135,11 @@ class MarketScanner:
             market_data = await self.market_data.get_multiple_ohlcv(symbols, timeframes)
             
             # Detect signals using appropriate detector
-            if self.settings.use_easy_detector:
+            # Check database for current mode
+            easy_mode_str = await self.db_repo.get_setting("use_easy_detector")
+            use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+            
+            if use_easy_detector:
                 signals = self.easy_detector.detect_signals(market_data)
                 logger.info("Using EasySignalDetector for signal detection")
             else:
