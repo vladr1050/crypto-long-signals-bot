@@ -137,24 +137,19 @@ class EasySignalDetector:
     
     def _check_easy_trend_filter(self, entry_df: pd.DataFrame) -> bool:
         """
-        Check easy trend filter (only price > EMA50 on 15m)
+        Check easy trend filter (NO trend filter - always pass)
         
         Args:
             entry_df: 15m timeframe data
             
         Returns:
-            True if easy trend filter passes
+            True if easy trend filter passes (always True for testing)
         """
         try:
-            # Only check if price is above EMA50 on 15m timeframe
-            ema_50 = self.ta.calculate_ema(entry_df['close'], self.settings.ema_50_period)
-            current_price = entry_df['close'].iloc[-1]
-            current_ema_50 = ema_50.iloc[-1]
-            
-            result = current_price > current_ema_50
-            logger.debug(f"Easy trend filter: price={current_price:.4f} > ema50={current_ema_50:.4f} = {result}")
-            
-            return result
+            # For testing: NO trend filter - always pass
+            # This should generate many more signals for testing
+            logger.debug("Easy trend filter: ALWAYS PASS (no trend filter for testing)")
+            return True
             
         except Exception as e:
             logger.error(f"Error checking easy trend filter: {e}")

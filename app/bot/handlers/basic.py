@@ -939,11 +939,11 @@ async def cmd_easy_mode(message: Message, **kwargs):
         if new_mode:
             await message.answer(
                 "🟢 <b>Easy Mode ENABLED</b>\n\n"
-                "Easy mode uses more lenient conditions:\n"
-                "• Trend filter: Only price > EMA50 (15m)\n"
+                "Easy mode uses VERY lenient conditions:\n"
+                "• Trend filter: NONE (always pass)\n"
                 "• Entry triggers: Need ≥1 instead of ≥2\n"
                 "• Triggers: EMA crossover, price above EMA9, volume increase, any bullish candle\n\n"
-                "This should generate more signals for testing.\n\n"
+                "This should generate MANY signals for testing.\n\n"
                 "Use /force_scan to test immediately.",
                 parse_mode="HTML"
             )
@@ -972,7 +972,7 @@ async def cmd_mode_status(message: Message, **kwargs):
         if settings.use_easy_detector:
             mode_text = "🟢 <b>Easy Mode ACTIVE</b>"
             conditions_text = (
-                "• Trend filter: Only price > EMA50 (15m)\n"
+                "• Trend filter: NONE (always pass)\n"
                 "• Entry triggers: Need ≥1 out of 4\n"
                 "• Triggers: EMA crossover, price above EMA9, volume increase, any bullish candle"
             )
