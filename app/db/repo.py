@@ -4,7 +4,7 @@ Database repository for Crypto Long Signals Bot
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from sqlalchemy import and_, desc, select, text
+from sqlalchemy import and_, desc, select, text, func
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 

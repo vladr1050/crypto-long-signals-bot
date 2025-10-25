@@ -464,7 +464,7 @@ async def cmd_status(message: Message, **kwargs):
         # Get active signals count
         signals_count = await db_repo.get_signals_count()
         active_signals_count = await db_repo.get_active_signals_count()
-        user_active_signals = await db_repo.get_user_active_signals_count(user.telegram_id)
+        user_active_signals = await db_repo.get_user_active_signals_count(user.tg_id)
         
         # Build status message
         status_text = STATUS_HEADER
