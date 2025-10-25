@@ -887,16 +887,28 @@ async def cmd_debug_scanner(message: Message, **kwargs):
             if all([df is not None and not df.empty for df in [trend_df, entry_df, confirmation_df]]):
                 ta = TechnicalAnalysis()
                 
-                # Test trend filter
-                trend_bullish = ta.is_trend_bullish(trend_df)
-                entry_trend_bullish = ta.is_trend_bullish(entry_df)
-                rsi_neutral = ta.is_rsi_neutral_bullish(trend_df)
+                # Check current mode
+                easy_mode_str = await db_repo.get_setting("use_easy_detector")
+                use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
                 
-                debug_text += f"  Trend Filter: {'✅' if trend_bullish else '❌'} (1h bullish: {trend_bullish})\n"
-                debug_text += f"  Entry Trend: {'✅' if entry_trend_bullish else '❌'} (15m bullish: {entry_trend_bullish})\n"
-                debug_text += f"  RSI Range: {'✅' if rsi_neutral else '❌'} (45-65: {rsi_neutral})\n"
+                debug_text += f"  <b>Detection Mode:</b> {'🟢 Easy Mode' if use_easy_detector else '🔴 Conservative Mode'}\n"
                 
-                trend_filter_ok = trend_bullish and entry_trend_bullish and rsi_neutral
+                if use_easy_detector:
+                    # Easy mode: no trend filter
+                    debug_text += f"  Trend Filter: ✅ (Easy Mode - Always Pass)\n"
+                    trend_filter_ok = True
+                else:
+                    # Conservative mode: full trend filter
+                    trend_bullish = ta.is_trend_bullish(trend_df)
+                    entry_trend_bullish = ta.is_trend_bullish(entry_df)
+                    rsi_neutral = ta.is_rsi_neutral_bullish(trend_df)
+                    
+                    debug_text += f"  Trend Filter: {'✅' if trend_bullish else '❌'} (1h bullish: {trend_bullish})\n"
+                    debug_text += f"  Entry Trend: {'✅' if entry_trend_bullish else '❌'} (15m bullish: {entry_trend_bullish})\n"
+                    debug_text += f"  RSI Range: {'✅' if rsi_neutral else '❌'} (45-65: {rsi_neutral})\n"
+                    
+                    trend_filter_ok = trend_bullish and entry_trend_bullish and rsi_neutral
+                
                 debug_text += f"  <b>Trend Filter Result:</b> {'✅ PASS' if trend_filter_ok else '❌ FAIL'}\n\n"
                 
                 if trend_filter_ok:
@@ -926,13 +938,20 @@ async def cmd_debug_scanner(message: Message, **kwargs):
                     debug_text += f"    - EMA Crossover: {'✅' if ema_crossover else '❌'}\n"
                     debug_text += f"    - Bullish Candle: {'✅' if bullish_candle else '❌'}\n"
                     
-                    triggers_ok = len(triggers) >= 2
-                    debug_text += f"  <b>Triggers Result:</b> {'✅ PASS' if triggers_ok else '❌ FAIL'} (need ≥2)\n\n"
+                    if use_easy_detector:
+                        triggers_ok = len(triggers) >= 1  # Easy mode needs only 1 trigger
+                        debug_text += f"  <b>Triggers Result:</b> {'✅ PASS' if triggers_ok else '❌ FAIL'} (Easy Mode: need ≥1)\n\n"
+                    else:
+                        triggers_ok = len(triggers) >= 2  # Conservative mode needs 2 triggers
+                        debug_text += f"  <b>Triggers Result:</b> {'✅ PASS' if triggers_ok else '❌ FAIL'} (Conservative Mode: need ≥2)\n\n"
                     
                     if triggers_ok:
                         debug_text += f"  <b>🎯 SIGNAL WOULD BE GENERATED!</b>\n"
                     else:
-                        debug_text += f"  <b>❌ No signal: Need ≥2 triggers</b>\n"
+                        if use_easy_detector:
+                            debug_text += f"  <b>❌ No signal: Need ≥1 trigger (Easy Mode)</b>\n"
+                        else:
+                            debug_text += f"  <b>❌ No signal: Need ≥2 triggers (Conservative Mode)</b>\n"
                 else:
                     debug_text += f"  <b>❌ No signal: Trend filter failed</b>\n"
             else:
