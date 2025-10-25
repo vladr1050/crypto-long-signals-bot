@@ -141,6 +141,10 @@ async def cmd_mock_real(message: Message, **kwargs):
             return
         symbol = pairs[0].symbol
 
+        # Check current mode
+        easy_mode_str = await db_repo.get_setting("use_easy_detector")
+        use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+
         mds = MarketDataService()
         ta = TechnicalAnalysis()
         rm = RiskManager()
@@ -152,11 +156,14 @@ async def cmd_mock_real(message: Message, **kwargs):
 
         price = float(m15["close"].iloc[-1])
         sl = float(ta.calculate_stop_loss(m15, price))
-        tp1, tp2 = rm.calculate_take_profits(price, sl)
+        
+        # Use technical take profits
+        tp1, tp2 = ta.calculate_technical_take_profits(m15, price)
 
         # Position estimate for demo: assume $10,000 account
         position = rm.calculate_max_position_value(10000.0, user.risk_pct, price, sl)
 
+        mode_text = "Easy Mode" if use_easy_detector else "Conservative Mode"
         mock = {
             "id": 0,
             "symbol": symbol,
@@ -169,7 +176,7 @@ async def cmd_mock_real(message: Message, **kwargs):
             "risk": f"{user.risk_pct}",
             "position": f"${position:.2f}",
             "expires": "8h",
-            "reason": "Trend OK + mock calculation from live data",
+            "reason": f"Mock signal from live data ({mode_text})",
         }
 
         notifier = NotificationService()
@@ -322,6 +329,10 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
         ta = TechnicalAnalysis()
         rm = RiskManager()
 
+        # Check current mode
+        easy_mode_str = await db_repo.get_setting("use_easy_detector")
+        use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+
         # Fetch data
         h1 = await mds.get_ohlcv(symbol, "1h", 200)
         m15 = await mds.get_ohlcv(symbol, "15m", 200)
@@ -338,7 +349,11 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
         price_h1 = float(h1["close"].iloc[-1])
         price_m15 = float(m15["close"].iloc[-1])
 
-        trend_ok = price_h1 > ema200_h1 and price_m15 > ema50_m15 and 45 <= rsi_h1 <= 65
+        # Apply trend filter based on current mode
+        if use_easy_detector:
+            trend_ok = True  # Easy mode: no trend filter
+        else:
+            trend_ok = price_h1 > ema200_h1 and price_m15 > ema50_m15 and 45 <= rsi_h1 <= 65
 
         # Entry triggers (sample): EMA9>EMA21 cross on 15m, BB squeeze breakout, bullish engulfing
         ema9 = ta.calculate_ema(m15["close"], 9)
@@ -374,14 +389,19 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
 
         reasons = []
         if not trend_ok:
-            if price_h1 <= ema200_h1:
-                reasons.append("Price below EMA200 (1h)")
-            if price_m15 <= ema50_m15:
-                reasons.append("Price below EMA50 (15m)")
-            if not (45 <= rsi_h1 <= 65):
-                reasons.append(f"RSI(14,1h) {rsi_h1:.1f} not in 45-65")
-        if len(triggers_hit) < 2:
-            reasons.append(f"Only {len(triggers_hit)} entry trigger(s) hit")
+            if not use_easy_detector:  # Only show trend reasons in conservative mode
+                if price_h1 <= ema200_h1:
+                    reasons.append("Price below EMA200 (1h)")
+                if price_m15 <= ema50_m15:
+                    reasons.append("Price below EMA50 (15m)")
+                if not (45 <= rsi_h1 <= 65):
+                    reasons.append(f"RSI(14,1h) {rsi_h1:.1f} not in 45-65")
+        
+        # Check trigger requirements based on mode
+        required_triggers = 1 if use_easy_detector else 2
+        if len(triggers_hit) < required_triggers:
+            mode_text = "Easy Mode" if use_easy_detector else "Conservative Mode"
+            reasons.append(f"Only {len(triggers_hit)} entry trigger(s) hit (need ≥{required_triggers} for {mode_text})")
 
         # Compose text
         # Volume diagnostics for context
@@ -398,12 +418,15 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
             "Demand signal on candle" if bullish_engulf or lower_wick_ratio >= 2.0 else "No bullish candle pattern"
         )
 
+        mode_icon = "🟢" if use_easy_detector else "🔴"
+        mode_text = "Easy Mode" if use_easy_detector else "Conservative Mode"
+        
         text = (
-            f"📈 <b>{symbol}</b> status\n"
+            f"📈 <b>{symbol}</b> status ({mode_icon} {mode_text})\n"
             f"Price (1h): {price_h1:.4f}, EMA200: {ema200_h1:.4f}, RSI14: {rsi_h1:.1f}\n"
             f"Price (15m): {price_m15:.4f}, EMA50: {ema50_m15:.4f}\n"
             f"Trend filter: {ok(trend_ok)} {hint_trend}\n\n"
-            f"Entry triggers hit: {', '.join(triggers_hit) if triggers_hit else 'none'}\n"
+            f"Entry triggers hit: {', '.join(triggers_hit) if triggers_hit else 'none'} (need ≥{required_triggers})\n"
             f"{ok(crossover)} EMA9/EMA21 {ema9_now:.4f}/{ema21_now:.4f} (prev {ema9_prev:.4f}/{ema21_prev:.4f}) — {hint_cross}\n"
             f"{ok(squeeze)} BB width {curr_width*100:.2f}% (avg 10: {avg_width*100:.2f}%) — {hint_squeeze}\n"
             f"ℹ️ Volume ratio: {vol_ratio:.2f}× vs SMA20\n"
@@ -438,13 +461,53 @@ async def cmd_help(message: Message):
 
 
 @router.message(Command("strategy"))
-async def cmd_strategy(message: Message):
+async def cmd_strategy(message: Message, **kwargs):
     """Handle /strategy command"""
-    await message.answer(
-        STRATEGY_MESSAGE,
-        reply_markup=get_back_keyboard(),
-        parse_mode="HTML"
-    )
+    try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        # Get current mode from database
+        easy_mode_str = await db_repo.get_setting("use_easy_detector")
+        use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+        
+        if use_easy_detector:
+            strategy_text = """
+<b>📈 My Trading Strategy (🟢 Easy Mode)</b>
+
+<b>Trend Filter:</b>
+• NONE - Always passes (Easy Mode)
+
+<b>Entry Triggers (Need ≥1):</b>
+• EMA9/EMA21 bullish crossover
+• Price above EMA9
+• Volume increase
+• Any bullish candle pattern
+
+<b>Risk Management:</b>
+• Stop Loss: Technical analysis (support/ATR)
+• Take Profit: Technical analysis (resistance/ATR)
+• Risk per trade: User-defined (adjustable)
+• Max concurrent signals: 3
+• Max holding time: 24 hours
+
+<b>Signal Grading:</b>
+• A: Strong (6+ points)
+• B: Good (4-5 points) 
+• C: High-risk (1-3 points)
+
+<b>Note:</b> Easy Mode generates more signals for testing purposes.
+            """
+        else:
+            strategy_text = STRATEGY_MESSAGE
+        
+        await message.answer(
+            strategy_text,
+            reply_markup=get_back_keyboard(),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Error in strategy command: {e}")
+        await message.answer(ERROR_GENERIC)
 
 
 @router.message(Command("status"))
@@ -466,9 +529,16 @@ async def cmd_status(message: Message, **kwargs):
         active_signals_count = await db_repo.get_active_signals_count()
         user_active_signals = await db_repo.get_user_active_signals_count(user.tg_id)
         
+        # Get current mode
+        easy_mode_str = await db_repo.get_setting("use_easy_detector")
+        use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+        mode_icon = "🟢" if use_easy_detector else "🔴"
+        mode_text = "Easy Mode" if use_easy_detector else "Conservative Mode"
+        
         # Build status message
         status_text = STATUS_HEADER
         status_text += SIGNALS_ENABLED if user.signals_enabled else SIGNALS_DISABLED
+        status_text += f"\n{mode_icon} <b>Detection Mode:</b> {mode_text}"
         status_text += f"\n{SCANNING_PAIRS.format(pairs=pairs_text)}"
         status_text += f"\n{ACTIVE_SIGNALS.format(count=signals_count)}"
         status_text += f"\n📊 Your active signals: <b>{user_active_signals}</b>"
@@ -596,15 +666,55 @@ async def callback_show_help(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == "show_strategy")
-async def callback_show_strategy(callback: CallbackQuery):
+async def callback_show_strategy(callback: CallbackQuery, **kwargs):
     """Handle show strategy callback"""
-    await safe_edit(
-        callback.message,
-        STRATEGY_MESSAGE,
-        reply_markup=get_back_keyboard(),
-        parse_mode="HTML",
-    )
-    await callback.answer()
+    try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        # Get current mode from database
+        easy_mode_str = await db_repo.get_setting("use_easy_detector")
+        use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+        
+        if use_easy_detector:
+            strategy_text = """
+<b>📈 My Trading Strategy (🟢 Easy Mode)</b>
+
+<b>Trend Filter:</b>
+• NONE - Always passes (Easy Mode)
+
+<b>Entry Triggers (Need ≥1):</b>
+• EMA9/EMA21 bullish crossover
+• Price above EMA9
+• Volume increase
+• Any bullish candle pattern
+
+<b>Risk Management:</b>
+• Stop Loss: Technical analysis (support/ATR)
+• Take Profit: Technical analysis (resistance/ATR)
+• Risk per trade: User-defined (adjustable)
+• Max concurrent signals: 3
+• Max holding time: 24 hours
+
+<b>Signal Grading:</b>
+• A: Strong (6+ points)
+• B: Good (4-5 points) 
+• C: High-risk (1-3 points)
+
+<b>Note:</b> Easy Mode generates more signals for testing purposes.
+            """
+        else:
+            strategy_text = STRATEGY_MESSAGE
+        
+        await safe_edit(
+            callback.message,
+            strategy_text,
+            reply_markup=get_back_keyboard(),
+            parse_mode="HTML",
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Error in show_strategy callback: {e}")
+        await callback.answer("Error loading strategy", show_alert=True)
 
 
 @router.callback_query(F.data == "show_status")
@@ -624,9 +734,16 @@ async def callback_show_status(callback: CallbackQuery, **kwargs):
         # Get active signals count
         signals_count = await db_repo.get_signals_count()
         
+        # Get current mode
+        easy_mode_str = await db_repo.get_setting("use_easy_detector")
+        use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+        mode_icon = "🟢" if use_easy_detector else "🔴"
+        mode_text = "Easy Mode" if use_easy_detector else "Conservative Mode"
+        
         # Build status message
         status_text = STATUS_HEADER
         status_text += SIGNALS_ENABLED if user.signals_enabled else SIGNALS_DISABLED
+        status_text += f"\n{mode_icon} <b>Detection Mode:</b> {mode_text}"
         status_text += f"\n{SCANNING_PAIRS.format(pairs=pairs_text)}"
         status_text += f"\n{ACTIVE_SIGNALS.format(count=signals_count)}"
         status_text += f"\n{RISK_SETTING.format(risk=user.risk_pct)}"
