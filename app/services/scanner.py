@@ -229,10 +229,56 @@ class MarketScanner:
                     f"TP1: {signal.take_profit_1} TP2: {signal.take_profit_2}"
                 )
                 
+                # Send notification to all users
+                await self._send_signal_to_users(signal_data)
+                
                 self.signals_generated += 1
             
         except Exception as e:
             logger.error(f"Error processing signals: {e}")
+    
+    async def _send_signal_to_users(self, signal_data: Dict):
+        """Send signal notification to all users who want signals"""
+        try:
+            # Get all users who want signals
+            users = await self.db_repo.get_users_with_signals_enabled()
+            
+            if not users:
+                logger.info("No users with signals enabled")
+                return
+            
+            # Get bot instance from main app
+            # For now, we'll need to pass bot instance to scanner
+            # This is a temporary solution - in production, use dependency injection
+            from app.main import get_bot_instance
+            bot = get_bot_instance()
+            
+            if not bot:
+                logger.error("Bot instance not available for sending signals")
+                return
+            
+            # Send to each user
+            sent_count = 0
+            for user in users:
+                try:
+                    success = await self.notifier.send_signal(
+                        bot=bot,
+                        user_id=user.telegram_id,
+                        signal=signal_data,
+                        db_repo=self.db_repo
+                    )
+                    if success:
+                        sent_count += 1
+                        logger.info(f"Signal sent to user {user.telegram_id}")
+                    else:
+                        logger.warning(f"Failed to send signal to user {user.telegram_id}")
+                except Exception as e:
+                    logger.error(f"Error sending signal to user {user.telegram_id}: {e}")
+            
+            logger.info(f"Signal sent to {sent_count}/{len(users)} users")
+            
+        except Exception as e:
+            logger.error(f"Error sending signal to users: {e}")
     
     async def _cleanup_expired_signals(self):
         """Clean up expired signals"""

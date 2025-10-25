@@ -246,3 +246,15 @@ class DatabaseRepository:
             
             await session.commit()
             return True
+    
+    async def get_users_with_signals_enabled(self) -> List[User]:
+        """Get all users who have signals enabled"""
+        try:
+            async with self.async_session() as session:
+                result = await session.execute(
+                    select(User).where(User.signals_enabled == True)
+                )
+                return result.scalars().all()
+        except Exception as e:
+            logger.error(f"Error getting users with signals enabled: {e}")
+            return []
