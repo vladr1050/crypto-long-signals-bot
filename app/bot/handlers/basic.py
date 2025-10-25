@@ -20,6 +20,8 @@ from app.bot.keyboards.common import (
 from app.bot.texts_en import *
 from app.db.repo import DatabaseRepository
 from app.config.settings import get_settings
+
+logger = logging.getLogger(__name__)
 from app.core.data.market import MarketDataService
 from app.core.indicators.ta import TechnicalAnalysis
 from app.core.risk.sizing import RiskManager
