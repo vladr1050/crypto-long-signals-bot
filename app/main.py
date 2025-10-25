@@ -109,13 +109,13 @@ async def main():
     # Inject db_repo via middleware (preferred for aiogram 3.x)
     dp.update.outer_middleware(DbRepoMiddleware(db_repo))
     
-        # Store bot instance globally for scanner
-        global _bot_instance
-        _bot_instance = bot
-        
-        # Start bot with lifespan
-        async with lifespan():
-            await dp.start_polling(bot)
+    # Store bot instance globally for scanner
+    global _bot_instance
+    _bot_instance = bot
+    
+    # Start bot with lifespan
+    async with lifespan():
+        await dp.start_polling(bot)
 
 
 def get_bot_instance():
