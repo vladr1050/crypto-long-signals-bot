@@ -1029,31 +1029,55 @@ async def cmd_debug_scanner(message: Message, **kwargs):
                 debug_text += f"  <b>Trend Filter Result:</b> {'✅ PASS' if trend_filter_ok else '❌ FAIL'}\n\n"
                 
                 if trend_filter_ok:
-                    # Test entry triggers
+                    # Test entry triggers using SAME logic as /check command
                     triggers = []
                     
-                    # Test each trigger
-                    breakout_retest = ta.check_breakout_retest(entry_df)
-                    if breakout_retest:
-                        triggers.append("breakout_retest")
-                    
-                    bb_squeeze = ta.check_bollinger_squeeze_expansion(entry_df)
-                    if bb_squeeze:
-                        triggers.append("bb_squeeze_expansion")
-                    
-                    ema_crossover = ta.check_ema_crossover(entry_df)
-                    if ema_crossover:
+                    # Test each trigger using direct calculations (same as /check)
+                    # 1. EMA9/EMA21 crossover
+                    ema9 = ta.calculate_ema(entry_df["close"], 9)
+                    ema21 = ta.calculate_ema(entry_df["close"], 21)
+                    ema9_now = float(ema9.iloc[-1])
+                    ema21_now = float(ema21.iloc[-1])
+                    ema9_prev = float(ema9.iloc[-2])
+                    ema21_prev = float(ema21.iloc[-2])
+                    crossover = ema9_now > ema21_now and ema9_prev <= ema21_prev
+                    if crossover:
                         triggers.append("ema_crossover")
                     
-                    bullish_candle = ta.check_bullish_candle(confirmation_df)
+                    # 2. BB squeeze (same logic as /check)
+                    bb_up, bb_low, bb_mid = ta.calculate_bollinger_bands(entry_df["close"], 20, 2.0)
+                    curr_width = float((bb_up.iloc[-1] - bb_low.iloc[-1]) / bb_mid.iloc[-1])
+                    avg_width = float(((bb_up - bb_low) / bb_mid).tail(10).mean())
+                    squeeze = curr_width < 0.05
+                    if squeeze:
+                        triggers.append("bb_squeeze")
+                    
+                    # 3. Bullish candle (same logic as /check)
+                    last = entry_df.iloc[-1]
+                    prev = entry_df.iloc[-2]
+                    bullish_engulf = (
+                        last["close"] > last["open"] and prev["close"] < prev["open"]
+                        and last["close"] > prev["open"] and last["open"] < prev["close"]
+                    )
+                    body = float(abs(last["close"] - last["open"]))
+                    lower_wick = float((last["open"] - last["low"]) if last["close"] > last["open"] else (last["close"] - last["low"]))
+                    lower_wick_ratio = (lower_wick / body) if body > 0 else 0.0
+                    bullish_candle = bullish_engulf or lower_wick_ratio >= 2.0
                     if bullish_candle:
                         triggers.append("bullish_candle")
                     
+                    # 4. Price above EMA9 (Easy Mode specific)
+                    if use_easy_detector:
+                        price_above_ema9 = float(entry_df["close"].iloc[-1]) > ema9_now
+                        if price_above_ema9:
+                            triggers.append("price_above_ema9")
+                    
                     debug_text += f"  <b>Entry Triggers:</b> {len(triggers)}/4\n"
-                    debug_text += f"    - Breakout & Retest: {'✅' if breakout_retest else '❌'}\n"
-                    debug_text += f"    - BB Squeeze Expansion: {'✅' if bb_squeeze else '❌'}\n"
-                    debug_text += f"    - EMA Crossover: {'✅' if ema_crossover else '❌'}\n"
+                    debug_text += f"    - EMA Crossover: {'✅' if crossover else '❌'}\n"
+                    debug_text += f"    - BB Squeeze: {'✅' if squeeze else '❌'}\n"
                     debug_text += f"    - Bullish Candle: {'✅' if bullish_candle else '❌'}\n"
+                    if use_easy_detector:
+                        debug_text += f"    - Price above EMA9: {'✅' if price_above_ema9 else '❌'}\n"
                     
                     if use_easy_detector:
                         triggers_ok = len(triggers) >= 1  # Easy mode needs only 1 trigger

@@ -168,6 +168,7 @@ class EasySignalDetector:
     ) -> List[str]:
         """
         Check easy entry trigger conditions (need at least 1)
+        Uses SAME logic as /check command for consistency
         
         Args:
             entry_df: 15m timeframe data
@@ -179,21 +180,21 @@ class EasySignalDetector:
         triggers = []
         
         try:
-            # 1. EMA9/EMA21 bullish crossover (easier condition)
+            # 1. EMA9/EMA21 crossover (same as /check)
             if self._check_easy_ema_crossover(entry_df):
-                triggers.append("easy_ema_crossover")
+                triggers.append("ema_crossover")
             
-            # 2. Price above EMA9 (simple momentum)
+            # 2. BB squeeze (same as /check)
+            if self._check_bb_squeeze(entry_df):
+                triggers.append("bb_squeeze")
+            
+            # 3. Bullish candle (same as /check)
+            if self._check_bullish_candle(confirmation_df):
+                triggers.append("bullish_candle")
+            
+            # 4. Price above EMA9 (Easy Mode specific)
             if self._check_price_above_ema9(entry_df):
                 triggers.append("price_above_ema9")
-            
-            # 3. Volume increase (simplified)
-            if self._check_volume_increase(entry_df):
-                triggers.append("volume_increase")
-            
-            # 4. Bullish candle (any bullish candle)
-            if self._check_any_bullish_candle(confirmation_df):
-                triggers.append("bullish_candle")
             
         except Exception as e:
             logger.error(f"Error checking easy entry triggers: {e}")
@@ -260,16 +261,47 @@ class EasySignalDetector:
             logger.error(f"Error checking volume increase: {e}")
             return False
     
-    def _check_any_bullish_candle(self, df: pd.DataFrame) -> bool:
-        """Check for any bullish candle"""
+    def _check_bb_squeeze(self, df: pd.DataFrame) -> bool:
+        """Check for BB squeeze (same logic as /check command)"""
         try:
-            if len(df) < 1:
+            if len(df) < 30:
                 return False
             
-            current = df.iloc[-1]
-            result = current['close'] > current['open']
+            # Calculate Bollinger Bands
+            bb_up, bb_low, bb_mid = self.ta.calculate_bollinger_bands(df['close'], 20, 2.0)
+            curr_width = float((bb_up.iloc[-1] - bb_low.iloc[-1]) / bb_mid.iloc[-1])
+            avg_width = float(((bb_up - bb_low) / bb_mid).tail(10).mean())
             
-            logger.debug(f"Bullish candle: {result} (close: {current['close']:.4f}, open: {current['open']:.4f})")
+            result = curr_width < 0.05
+            logger.debug(f"BB squeeze: {result} (current: {curr_width:.4f}, avg: {avg_width:.4f})")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error checking BB squeeze: {e}")
+            return False
+    
+    def _check_bullish_candle(self, df: pd.DataFrame) -> bool:
+        """Check for bullish candle (same logic as /check command)"""
+        try:
+            if len(df) < 2:
+                return False
+            
+            last = df.iloc[-1]
+            prev = df.iloc[-2]
+            
+            # Bullish engulfing
+            bullish_engulf = (
+                last["close"] > last["open"] and prev["close"] < prev["open"]
+                and last["close"] > prev["open"] and last["open"] < prev["close"]
+            )
+            
+            # Long wick candle
+            body = float(abs(last["close"] - last["open"]))
+            lower_wick = float((last["open"] - last["low"]) if last["close"] > last["open"] else (last["close"] - last["low"]))
+            lower_wick_ratio = (lower_wick / body) if body > 0 else 0.0
+            
+            result = bullish_engulf or lower_wick_ratio >= 2.0
+            logger.debug(f"Bullish candle: {result} (engulf: {bullish_engulf}, wick_ratio: {lower_wick_ratio:.2f})")
             return result
             
         except Exception as e:
@@ -280,10 +312,10 @@ class EasySignalDetector:
         """Generate reason for easy signal"""
         try:
             trigger_descriptions = {
-                "easy_ema_crossover": "EMA9/EMA21 crossover",
-                "price_above_ema9": "Price above EMA9",
-                "volume_increase": "Volume increase",
-                "bullish_candle": "Bullish candle"
+                "ema_crossover": "EMA9/EMA21 crossover",
+                "bb_squeeze": "BB squeeze",
+                "bullish_candle": "Bullish candle",
+                "price_above_ema9": "Price above EMA9"
             }
             
             trigger_texts = [trigger_descriptions.get(t, t) for t in triggers]
