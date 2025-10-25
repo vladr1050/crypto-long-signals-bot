@@ -150,24 +150,20 @@ class MarketScanner:
                 logger.info("No users with signals enabled")
                 return
             
-            # Detect signals for each user individually
-            all_signals = []
-            for user in users:
-                if use_easy_detector:
-                    user_signals = self.easy_detector.detect_signals(market_data, user.risk_pct)
-                else:
-                    user_signals = self.signal_detector.detect_signals(market_data, user.risk_pct)
+            # Detect signals once (using first user's risk as reference)
+            first_user = users[0] if users else None
+            if not first_user:
+                logger.info("No users found")
+                return
                 
-                # Add user info to each signal
-                for signal in user_signals:
-                    signal['user_id'] = user.tg_id
-                    signal['user_risk_pct'] = user.risk_pct
-                
-                all_signals.extend(user_signals)
+            if use_easy_detector:
+                signals = self.easy_detector.detect_signals(market_data, first_user.risk_pct)
+            else:
+                signals = self.signal_detector.detect_signals(market_data, first_user.risk_pct)
             
-            if all_signals:
-                logger.info(f"🎯 Detected {len(all_signals)} signals for {len(users)} users")
-                await self._process_signals(all_signals)
+            if signals:
+                logger.info(f"🎯 Detected {len(signals)} signals")
+                await self._process_signals(signals, users)
             else:
                 logger.info("No signals detected in this scan")
                 # Add detailed logging for debugging
@@ -219,12 +215,10 @@ class MarketScanner:
         except Exception as e:
             logger.error(f"Error in market scan: {e}")
     
-    async def _process_signals(self, signals: List[Dict]):
+    async def _process_signals(self, signals: List[Dict], users: List):
         """Process detected signals"""
         try:
             for signal_data in signals:
-                # Signal filtering already done in _scan_markets
-                
                 # Create signal in database
                 signal = await self.db_repo.create_signal(
                     symbol=signal_data['symbol'],
@@ -244,19 +238,56 @@ class MarketScanner:
                 
                 # Log signal
                 logger.info(
-                    f"Signal created for user {signal_data.get('user_id', 'unknown')}: {signal.symbol} {signal.grade} "
+                    f"Signal created: {signal.symbol} {signal.grade} "
                     f"Entry: {signal.entry_price} SL: {signal.stop_loss} "
-                    f"TP1: {signal.take_profit_1} TP2: {signal.take_profit_2} "
-                    f"Risk: {signal_data.get('user_risk_pct', 'unknown')}%"
+                    f"TP1: {signal.take_profit_1} TP2: {signal.take_profit_2}"
                 )
                 
-                # Send signal to specific user
-                await self._send_signal_to_user(signal_data)
+                # Send signal to all users
+                await self._send_signal_to_all_users(signal_data, users)
                 
                 self.signals_generated += 1
             
         except Exception as e:
             logger.error(f"Error processing signals: {e}")
+    
+    async def _send_signal_to_all_users(self, signal_data: Dict, users: List):
+        """Send signal notification to all users"""
+        try:
+            from app.main import get_bot_instance
+            bot = get_bot_instance()
+            if not bot:
+                logger.error("Bot instance not available for sending signals")
+                return
+            
+            sent_count = 0
+            for user in users:
+                try:
+                    # Add user-specific info to signal data
+                    user_signal_data = signal_data.copy()
+                    user_signal_data['user_id'] = user.tg_id
+                    user_signal_data['user_risk_pct'] = user.risk_pct
+                    
+                    success = await self.notifier.send_signal(
+                        bot=bot,
+                        user_id=user.tg_id,
+                        signal=user_signal_data,
+                        db_repo=self.db_repo
+                    )
+                    
+                    if success:
+                        sent_count += 1
+                        logger.info(f"Signal sent to user {user.tg_id}")
+                    else:
+                        logger.warning(f"Failed to send signal to user {user.tg_id}")
+                        
+                except Exception as e:
+                    logger.error(f"Error sending signal to user {user.tg_id}: {e}")
+            
+            logger.info(f"Signal sent to {sent_count}/{len(users)} users")
+            
+        except Exception as e:
+            logger.error(f"Error sending signal to users: {e}")
     
     async def _send_signal_to_user(self, signal_data: Dict):
         """Send signal notification to specific user"""
