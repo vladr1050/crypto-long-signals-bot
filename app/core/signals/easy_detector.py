@@ -24,13 +24,15 @@ class EasySignalDetector:
     
     def detect_signals(
         self, 
-        market_data: Dict[str, Dict[str, pd.DataFrame]]
+        market_data: Dict[str, Dict[str, pd.DataFrame]],
+        user_risk_pct: float = None
     ) -> List[Dict]:
         """
         Detect long signals with easier conditions
         
         Args:
             market_data: Nested dict of {symbol: {timeframe: DataFrame}}
+            user_risk_pct: User's risk percentage (overrides default)
             
         Returns:
             List of detected signals
@@ -39,7 +41,7 @@ class EasySignalDetector:
         
         for symbol, timeframes in market_data.items():
             try:
-                signal = self._detect_signal_for_symbol(symbol, timeframes)
+                signal = self._detect_signal_for_symbol(symbol, timeframes, user_risk_pct)
                 if signal:
                     signals.append(signal)
             except Exception as e:
@@ -50,7 +52,8 @@ class EasySignalDetector:
     def _detect_signal_for_symbol(
         self, 
         symbol: str, 
-        timeframes: Dict[str, pd.DataFrame]
+        timeframes: Dict[str, pd.DataFrame],
+        user_risk_pct: float = None
     ) -> Optional[Dict]:
         """
         Detect signal for a specific symbol with easier conditions
@@ -91,7 +94,7 @@ class EasySignalDetector:
             stop_loss = self.ta.calculate_stop_loss(entry_df, entry_price)
             
             # Validate risk parameters
-            risk_pct = self.settings.default_risk_pct
+            risk_pct = user_risk_pct if user_risk_pct is not None else self.settings.default_risk_pct
             is_valid, error_msg = self.risk_manager.validate_risk_parameters(
                 risk_pct, entry_price, stop_loss
             )

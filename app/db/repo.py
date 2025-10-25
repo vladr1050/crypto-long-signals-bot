@@ -336,6 +336,16 @@ class DatabaseRepository:
             logger.error(f"Error getting user active signals count: {e}")
             return 0
     
+    async def get_all_users(self) -> List[User]:
+        """Get all users"""
+        try:
+            async with self.async_session() as session:
+                result = await session.execute(select(User))
+                return result.scalars().all()
+        except Exception as e:
+            logger.error(f"Error getting all users: {e}")
+            return []
+    
     async def add_snooze_column_if_not_exists(self) -> bool:
         """Add snooze_until column to signals table if it doesn't exist"""
         import logging

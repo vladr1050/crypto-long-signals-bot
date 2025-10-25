@@ -139,16 +139,30 @@ class MarketScanner:
             easy_mode_str = await self.db_repo.get_setting("use_easy_detector")
             use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
             
-            if use_easy_detector:
-                signals = self.easy_detector.detect_signals(market_data)
-                logger.info("Using EasySignalDetector for signal detection")
-            else:
-                signals = self.signal_detector.detect_signals(market_data)
-                logger.info("Using SignalDetector for signal detection")
+            # Get all users who want signals
+            users = await self.db_repo.get_users_with_signals_enabled()
+            if not users:
+                logger.info("No users with signals enabled")
+                return
             
-            if signals:
-                logger.info(f"🎯 Detected {len(signals)} signals")
-                await self._process_signals(signals)
+            # Detect signals for each user individually
+            all_signals = []
+            for user in users:
+                if use_easy_detector:
+                    user_signals = self.easy_detector.detect_signals(market_data, user.risk_pct)
+                else:
+                    user_signals = self.signal_detector.detect_signals(market_data, user.risk_pct)
+                
+                # Add user info to each signal
+                for signal in user_signals:
+                    signal['user_id'] = user.tg_id
+                    signal['user_risk_pct'] = user.risk_pct
+                
+                all_signals.extend(user_signals)
+            
+            if all_signals:
+                logger.info(f"🎯 Detected {len(all_signals)} signals for {len(users)} users")
+                await self._process_signals(all_signals)
             else:
                 logger.info("No signals detected in this scan")
                 # Add detailed logging for debugging
@@ -228,61 +242,52 @@ class MarketScanner:
                 
                 # Log signal
                 logger.info(
-                    f"Signal created: {signal.symbol} {signal.grade} "
+                    f"Signal created for user {signal_data.get('user_id', 'unknown')}: {signal.symbol} {signal.grade} "
                     f"Entry: {signal.entry_price} SL: {signal.stop_loss} "
-                    f"TP1: {signal.take_profit_1} TP2: {signal.take_profit_2}"
+                    f"TP1: {signal.take_profit_1} TP2: {signal.take_profit_2} "
+                    f"Risk: {signal_data.get('user_risk_pct', 'unknown')}%"
                 )
                 
-                # Send notification to all users
-                await self._send_signal_to_users(signal_data)
+                # Send signal to specific user
+                await self._send_signal_to_user(signal_data)
                 
                 self.signals_generated += 1
             
         except Exception as e:
             logger.error(f"Error processing signals: {e}")
     
-    async def _send_signal_to_users(self, signal_data: Dict):
-        """Send signal notification to all users who want signals"""
+    async def _send_signal_to_user(self, signal_data: Dict):
+        """Send signal notification to specific user"""
         try:
-            # Get all users who want signals
-            users = await self.db_repo.get_users_with_signals_enabled()
+            user_id = signal_data.get('user_id')
+            if not user_id:
+                logger.error("No user_id in signal data")
+                return False
             
-            if not users:
-                logger.info("No users with signals enabled")
-                return
-            
-            # Get bot instance from main app
-            # For now, we'll need to pass bot instance to scanner
-            # This is a temporary solution - in production, use dependency injection
             from app.main import get_bot_instance
             bot = get_bot_instance()
-            
             if not bot:
                 logger.error("Bot instance not available for sending signals")
-                return
+                return False
             
-            # Send to each user
-            sent_count = 0
-            for user in users:
-                try:
-                    success = await self.notifier.send_signal(
-                        bot=bot,
-                        user_id=user.tg_id,
-                        signal=signal_data,
-                        db_repo=self.db_repo
-                    )
-                    if success:
-                        sent_count += 1
-                        logger.info(f"Signal sent to user {user.tg_id}")
-                    else:
-                        logger.warning(f"Failed to send signal to user {user.tg_id}")
-                except Exception as e:
-                    logger.error(f"Error sending signal to user {user.tg_id}: {e}")
+            success = await self.notifier.send_signal(
+                bot=bot,
+                user_id=user_id,
+                signal=signal_data,
+                db_repo=self.db_repo
+            )
             
-            logger.info(f"Signal sent to {sent_count}/{len(users)} users")
+            if success:
+                logger.info(f"Signal sent to user {user_id}")
+            else:
+                logger.warning(f"Failed to send signal to user {user_id}")
+            
+            return success
             
         except Exception as e:
-            logger.error(f"Error sending signal to users: {e}")
+            logger.error(f"Error sending signal to user: {e}")
+            return False
+    
     
     async def _cleanup_expired_signals(self):
         """Clean up expired signals"""
