@@ -91,15 +91,15 @@ class EasySignalDetector:
             
             # Calculate signal parameters
             entry_price = entry_df['close'].iloc[-1]
-            stop_loss = self.ta.calculate_stop_loss(entry_df, entry_price)
+            stop_loss = self.ta.calculate_stop_loss(entry_df, entry_price, is_easy_mode=True)
             
             # Calculate technical take profits
             tp1, tp2 = self.ta.calculate_technical_take_profits(entry_df, entry_price)
             
-            # Validate risk parameters
+            # Validate risk parameters (Easy Mode - more lenient)
             risk_pct = user_risk_pct if user_risk_pct is not None else self.settings.default_risk_pct
             is_valid, error_msg = self.risk_manager.validate_risk_parameters(
-                risk_pct, entry_price, stop_loss
+                risk_pct, entry_price, stop_loss, is_easy_mode=True
             )
             
             if not is_valid:

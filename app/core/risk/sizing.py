@@ -161,7 +161,8 @@ class RiskManager:
         self, 
         risk_per_trade: float, 
         entry_price: float, 
-        stop_loss: float
+        stop_loss: float,
+        is_easy_mode: bool = False
     ) -> Tuple[bool, str]:
         """
         Validate risk parameters
@@ -170,6 +171,7 @@ class RiskManager:
             risk_per_trade: Risk percentage per trade
             entry_price: Entry price
             stop_loss: Stop loss price
+            is_easy_mode: Whether this is Easy Mode (more lenient validation)
             
         Returns:
             Tuple of (is_valid, error_message)
@@ -186,12 +188,17 @@ class RiskManager:
             if entry_price <= stop_loss:
                 return False, "Entry price must be greater than stop loss"
             
-            # Check stop loss distance
+            # Check stop loss distance (more lenient for Easy Mode)
             stop_loss_pct = ((entry_price - stop_loss) / entry_price) * 100
-            if stop_loss_pct < 0.5:
-                return False, "Stop loss too close to entry (< 0.5%)"
-            if stop_loss_pct > 10.0:
-                return False, "Stop loss too far from entry (> 10%)"
+            min_distance = 0.1 if is_easy_mode else 0.5  # 0.1% for Easy Mode, 0.5% for Conservative
+            max_distance = 15.0 if is_easy_mode else 10.0  # 15% for Easy Mode, 10% for Conservative
+            
+            if stop_loss_pct < min_distance:
+                mode_text = "Easy Mode" if is_easy_mode else "Conservative Mode"
+                return False, f"Stop loss too close to entry (< {min_distance}% for {mode_text})"
+            if stop_loss_pct > max_distance:
+                mode_text = "Easy Mode" if is_easy_mode else "Conservative Mode"
+                return False, f"Stop loss too far from entry (> {max_distance}% for {mode_text})"
             
             return True, ""
             

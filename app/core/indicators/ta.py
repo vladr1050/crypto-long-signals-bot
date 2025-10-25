@@ -285,13 +285,14 @@ class TechnicalAnalysis:
             logger.error(f"Error calculating support/resistance: {e}")
             return 0.0, 0.0
     
-    def calculate_stop_loss(self, df: pd.DataFrame, entry_price: float) -> float:
+    def calculate_stop_loss(self, df: pd.DataFrame, entry_price: float, is_easy_mode: bool = False) -> float:
         """
         Calculate stop loss level
         
         Args:
             df: DataFrame with OHLCV data
             entry_price: Entry price for the position
+            is_easy_mode: Whether this is Easy Mode (more lenient)
             
         Returns:
             Stop loss price
@@ -307,7 +308,15 @@ class TechnicalAnalysis:
             sl_atr = entry_price - (1.5 * current_atr)
             
             # Take the larger (more conservative) stop loss
-            return max(sl_swing, sl_atr)
+            calculated_sl = max(sl_swing, sl_atr)
+            
+            # Ensure minimum distance for Easy Mode
+            if is_easy_mode:
+                min_distance_pct = 0.15  # 0.15% minimum for Easy Mode
+                min_sl = entry_price * (1 - min_distance_pct / 100)
+                calculated_sl = max(calculated_sl, min_sl)
+            
+            return calculated_sl
             
         except Exception as e:
             logger.error(f"Error calculating stop loss: {e}")
