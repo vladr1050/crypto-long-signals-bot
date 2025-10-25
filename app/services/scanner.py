@@ -263,17 +263,17 @@ class MarketScanner:
                 try:
                     success = await self.notifier.send_signal(
                         bot=bot,
-                        user_id=user.telegram_id,
+                        user_id=user.tg_id,
                         signal=signal_data,
                         db_repo=self.db_repo
                     )
                     if success:
                         sent_count += 1
-                        logger.info(f"Signal sent to user {user.telegram_id}")
+                        logger.info(f"Signal sent to user {user.tg_id}")
                     else:
-                        logger.warning(f"Failed to send signal to user {user.telegram_id}")
+                        logger.warning(f"Failed to send signal to user {user.tg_id}")
                 except Exception as e:
-                    logger.error(f"Error sending signal to user {user.telegram_id}: {e}")
+                    logger.error(f"Error sending signal to user {user.tg_id}: {e}")
             
             logger.info(f"Signal sent to {sent_count}/{len(users)} users")
             
