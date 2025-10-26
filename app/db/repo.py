@@ -1,6 +1,7 @@
 """
 Database repository for Crypto Long Signals Bot
 """
+import logging
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -10,6 +11,8 @@ from sqlalchemy.orm import sessionmaker
 
 from app.config.settings import get_settings
 from app.db.models import Base, Pair, Setting, Signal, SignalStatus, User
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseRepository:
