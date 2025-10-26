@@ -450,7 +450,7 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
                 rsi_m15 = ta.calculate_rsi(m15["close"], 14)
                 current_rsi = float(rsi_m15.iloc[-1])
                 prev_rsi = float(rsi_m15.iloc[-2])
-                hint_trend = f"Need RSI bounce (<30→≥30), current: {current_rsi:.1f}, prev: {prev_rsi:.1f}"
+                hint_trend = f"Need RSI bounce (lt30 to geq30), current: {current_rsi:.1f}, prev: {prev_rsi:.1f}"
         else:  # conservative
             hint_trend = (
                 "Above EMA200/EMA50 & RSI 45-65" if trend_ok else "Need >EMA200(1h), >EMA50(15m), RSI in 45-65"
