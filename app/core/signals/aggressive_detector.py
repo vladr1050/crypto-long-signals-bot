@@ -87,9 +87,9 @@ class AggressiveSignalDetector:
             if not self._check_aggressive_filter(entry_df):
                 return None
             
-            # Check entry triggers (need all 3: RSI bounce + EMA crossover + Volume)
+            # Check entry triggers (need ≥3 out of 4: RSI bounce + EMA crossover + Volume + Trend strengthening)
             triggers = self._check_aggressive_entry_triggers(entry_df, confirmation_df)
-            if len(triggers) < 3:  # Need all 3 conditions
+            if len(triggers) < 3:  # Need at least 3 out of 4 conditions
                 return None
             
             # Calculate signal parameters
@@ -176,10 +176,11 @@ class AggressiveSignalDetector:
         confirmation_df: pd.DataFrame
     ) -> List[str]:
         """
-        Check aggressive entry trigger conditions (need all 3)
-        - RSI bounce (< 30 then >= 30)
-        - EMA crossover (price crosses EMA50 from below)
-        - Volume surge (last candle volume >= 1.5x average)
+        Check aggressive entry trigger conditions (need ≥3 out of 4)
+        1. RSI bounce (< 30 then >= 30)
+        2. EMA crossover (price crosses EMA50 from below)
+        3. Volume surge (last candle volume >= 1.5x average)
+        4. Trend strengthening (EMA20 > EMA50)
         
         Args:
             entry_df: 15m timeframe data
