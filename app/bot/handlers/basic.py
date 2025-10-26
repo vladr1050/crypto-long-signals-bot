@@ -411,40 +411,88 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
             
         else:
             # Conservative/Easy mode triggers
-            ema9 = ta.calculate_ema(m15["close"], 9)
-            ema21 = ta.calculate_ema(m15["close"], 21)
-            ema9_now = float(ema9.iloc[-1])
-            ema21_now = float(ema21.iloc[-1])
-            ema9_prev = float(ema9.iloc[-2])
-            ema21_prev = float(ema21.iloc[-2])
-            crossover = ema9_now > ema21_now and ema9_prev <= ema21_prev
+            # Use same logic as detectors for consistency
+            if strategy_mode == "easy":
+                # Easy mode: simple triggers
+                ema9 = ta.calculate_ema(m15["close"], 9)
+                ema21 = ta.calculate_ema(m15["close"], 21)
+                ema9_now = float(ema9.iloc[-1])
+                ema21_now = float(ema21.iloc[-1])
+                ema9_prev = float(ema9.iloc[-2])
+                ema21_prev = float(ema21.iloc[-2])
+                crossover = ema9_now > ema21_now and ema9_prev <= ema21_prev
 
-            bb_up, bb_low, bb_mid = ta.calculate_bollinger_bands(m15["close"], 20, 2.0)
-            curr_width = float((bb_up.iloc[-1] - bb_low.iloc[-1]) / bb_mid.iloc[-1])
-            avg_width = float(((bb_up - bb_low) / bb_mid).tail(10).mean())
-            squeeze = curr_width < 0.05
+                bb_up, bb_low, bb_mid = ta.calculate_bollinger_bands(m15["close"], 20, 2.0)
+                curr_width = float((bb_up.iloc[-1] - bb_low.iloc[-1]) / bb_mid.iloc[-1])
+                squeeze = curr_width < 0.05
 
-            last = m15.iloc[-1]
-            prev = m15.iloc[-2]
-            bullish_engulf = (
-                last["close"] > last["open"] and prev["close"] < prev["open"]
-                and last["close"] > prev["open"] and last["open"] < prev["close"]
-            )
-            body = float(abs(last["close"] - last["open"]))
-            lower_wick = float((last["open"] - last["low"]) if last["close"] > last["open"] else (last["close"] - last["low"]))
-            upper_wick = float((last["high"] - last["close"]) if last["close"] > last["open"] else (last["high"] - last["open"]))
-            lower_wick_ratio = (lower_wick / body) if body > 0 else 0.0
-
-            # Check if lower wick is bullish (long lower wick = demand)
-            bullish_candle = bullish_engulf or lower_wick_ratio >= 2.0
+                last = m15.iloc[-1]
+                prev = m15.iloc[-2]
+                bullish_engulf = (
+                    last["close"] > last["open"] and prev["close"] < prev["open"]
+                    and last["close"] > prev["open"] and last["open"] < prev["close"]
+                )
+                body = float(abs(last["close"] - last["open"]))
+                lower_wick = float((last["open"] - last["low"]) if last["close"] > last["open"] else (last["close"] - last["low"]))
+                lower_wick_ratio = (lower_wick / body) if body > 0 else 0.0
+                bullish_candle = bullish_engulf or lower_wick_ratio >= 2.0
+                
+                price_above_ema9 = float(m15["close"].iloc[-1]) > float(ema9.iloc[-1])
+                
+                triggers = [
+                    ("EMA9>EMA21 crossover", crossover),
+                    ("BB squeeze", squeeze),
+                    ("Bullish candle", bullish_candle),
+                    ("Price > EMA9", price_above_ema9),
+                ]
+                required_triggers = 1
+            else:  # conservative
+                # Conservative mode: use same logic as conservative detector
+                # Check breakout & retest
+                breakout_retest = ta.check_breakout_retest(m15)
+                
+                # Check BB squeeze expansion with volume
+                bb_up, bb_low, bb_mid = ta.calculate_bollinger_bands(m15["close"], 20, 2.0)
+                curr_width = float((bb_up.iloc[-1] - bb_low.iloc[-1]) / bb_mid.iloc[-1])
+                avg_width = float(((bb_up - bb_low) / bb_mid).tail(10).mean())
+                bb_squeeze_expansion = curr_width > avg_width * 1.1
+                volume_sma = m15["volume"].rolling(window=20).mean()
+                volume_increase = float(m15["volume"].iloc[-1]) > float(volume_sma.iloc[-1]) * 1.2
+                bb_squeeze_exp = bb_squeeze_expansion and volume_increase
+                
+                # Check EMA crossover
+                ema9 = ta.calculate_ema(m15["close"], 9)
+                ema21 = ta.calculate_ema(m15["close"], 21)
+                ema50 = ta.calculate_ema(m15["close"], 50)
+                ema9_now = float(ema9.iloc[-1])
+                ema21_now = float(ema21.iloc[-1])
+                ema9_prev = float(ema9.iloc[-2])
+                ema21_prev = float(ema21.iloc[-2])
+                ema50_now = float(ema50.iloc[-1])
+                
+                # EMA9/EMA21 crossover AND price > EMA50 (conservative requirement)
+                ema_crossover = ema9_now > ema21_now and ema9_prev <= ema21_prev
+                price_above_ema50 = float(m15["close"].iloc[-1]) > ema50_now
+                ema_cross_above = ema_crossover and price_above_ema50
+                
+                # Check bullish candle
+                last = m15.iloc[-1]
+                prev = m15.iloc[-2]
+                bullish_engulf = (
+                    last["close"] > last["open"] and prev["close"] < prev["open"]
+                    and last["close"] > prev["open"] and last["open"] < prev["close"]
+                )
+                bullish_candle = ta.check_bullish_candle(m15)
+                
+                triggers = [
+                    ("Breakout & retest", breakout_retest),
+                    ("BB squeeze expansion", bb_squeeze_exp),
+                    ("EMA crossover above EMA50", ema_cross_above),
+                    ("Bullish candle", bullish_candle),
+                ]
+                required_triggers = 2
             
-            triggers = [
-                ("EMA9>EMA21 cross", crossover),
-                ("BB squeeze", squeeze),
-                ("Bullish candle", bullish_candle),
-            ]
             triggers_hit = [name for name, ok in triggers if ok]
-            required_triggers = 1 if strategy_mode == "easy" else 2
 
         reasons = []
         if not trend_ok:
@@ -507,54 +555,50 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
             mode_text_display = "Conservative Mode"
         
         # Build trigger details text based on mode
+        # Initialize variables with defaults to avoid scope issues
+        crossover = False
+        squeeze = False
+        bullish_candle = False
+        price_above_ema9 = False
+        breakout_retest = False
+        bb_squeeze_exp = False
+        ema_cross_above = False
+        
         if strategy_mode == "aggressive":
             # Aggressive mode: show specific trigger details
-            price_cross_detail = "Price crosses EMA50" if any("Price crosses EMA50" in name for name in triggers_hit) else "No price cross"
-            volume_detail = "Volume surge" if any("Volume surge" in name for name in triggers_hit) else "No volume surge"
-            ema20_detail = "EMA20 > EMA50" if any("EMA20 > EMA50" in name for name in triggers_hit) else "No trend strengthening"
-            
             trigger_details = (
                 f"{ok(any('RSI bounce' in name for name in triggers_hit))} RSI bounce from oversold — {hint_trend}\n"
-                f"{ok(any('Price crosses EMA50' in name for name in triggers_hit))} Price crosses EMA50 — {price_cross_detail}\n"
-                f"{ok(any('Volume surge' in name for name in triggers_hit))} Volume surge (≥1.5x average) — {volume_detail}\n"
-                f"{ok(any('EMA20 > EMA50' in name for name in triggers_hit))} EMA20 > EMA50 — {ema20_detail}\n"
+                f"{ok(any('Price crosses EMA50' in name for name in triggers_hit))} Price crosses EMA50\n"
+                f"{ok(any('Volume surge' in name for name in triggers_hit))} Volume surge (≥1.5x average)\n"
+                f"{ok(any('EMA20 > EMA50' in name for name in triggers_hit))} EMA20 > EMA50 (trend strengthening)\n"
             )
-        else:
-            # Conservative/Easy mode: show standard trigger details
-            ema9 = ta.calculate_ema(m15["close"], 9)
-            ema21 = ta.calculate_ema(m15["close"], 21)
-            ema9_now = float(ema9.iloc[-1])
-            ema21_now = float(ema21.iloc[-1])
-            ema9_prev = float(ema9.iloc[-2])
-            ema21_prev = float(ema21.iloc[-2])
-            crossover = ema9_now > ema21_now and ema9_prev <= ema21_prev
-
-            bb_up, bb_low, bb_mid = ta.calculate_bollinger_bands(m15["close"], 20, 2.0)
-            curr_width = float((bb_up.iloc[-1] - bb_low.iloc[-1]) / bb_mid.iloc[-1])
-            avg_width = float(((bb_up - bb_low) / bb_mid).tail(10).mean())
-            squeeze = curr_width < 0.05
-
-            last = m15.iloc[-1]
-            prev = m15.iloc[-2]
-            bullish_engulf = (
-                last["close"] > last["open"] and prev["close"] < prev["open"]
-                and last["close"] > prev["open"] and last["open"] < prev["close"]
-            )
-            body = float(abs(last["close"] - last["open"]))
-            lower_wick = float((last["open"] - last["low"]) if last["close"] > last["open"] else (last["close"] - last["low"]))
-            lower_wick_ratio = (lower_wick / body) if body > 0 else 0.0
-            
+        elif strategy_mode == "easy":
+            # Easy mode: show simple triggers with details
+            # Variables already calculated above
             hint_cross = "Momentum shift if cross just happened" if crossover else "Wait for EMA9 crossing EMA21 up"
             hint_squeeze = "Volatility compression can precede breakout" if squeeze else "No squeeze now"
-            hint_candle = (
-                "Demand signal on candle" if bullish_engulf or lower_wick_ratio >= 2.0 else "No bullish candle pattern"
-            )
+            hint_candle = "Bullish candle detected" if bullish_candle else "No bullish candle"
+            hint_price = f"Price {float(m15['close'].iloc[-1]):.4f} {'above' if price_above_ema9 else 'below'} EMA9 {ema9_now:.4f}"
             
             trigger_details = (
-                f"{ok(crossover)} EMA9/EMA21 {ema9_now:.4f}/{ema21_now:.4f} (prev {ema9_prev:.4f}/{ema21_prev:.4f}) — {hint_cross}\n"
-                f"{ok(squeeze)} BB width {curr_width*100:.2f}% (avg 10: {avg_width*100:.2f}%) — {hint_squeeze}\n"
-                f"ℹ️ Volume ratio: {vol_ratio:.2f}× vs SMA20\n"
-                f"{ok(bullish_engulf or lower_wick_ratio>=2.0)} Candle: engulfing={str(bullish_engulf)}, lower-wick/body={lower_wick_ratio:.2f}x — {hint_candle}\n"
+                f"{ok(crossover)} EMA9/EMA21 crossover — {hint_cross}\n"
+                f"{ok(squeeze)} BB squeeze — {hint_squeeze}\n"
+                f"{ok(bullish_candle)} Bullish candle — {hint_candle}\n"
+                f"{ok(price_above_ema9)} Price > EMA9 — {hint_price}\n"
+            )
+        else:  # conservative
+            # Conservative mode: show detailed triggers matching detector logic
+            # Variables already calculated above
+            hint_breakout = "Price broke resistance and retested" if breakout_retest else "No breakout & retest"
+            hint_bb = "BB width expanded with volume" if bb_squeeze_exp else "No BB squeeze expansion"
+            hint_ema = "EMA crossover above EMA50" if ema_cross_above else "No EMA crossover above EMA50"
+            hint_candle_cons = "Bullish candle detected" if bullish_candle else "No bullish candle"
+            
+            trigger_details = (
+                f"{ok(breakout_retest)} Breakout & retest — {hint_breakout}\n"
+                f"{ok(bb_squeeze_exp)} BB squeeze expansion — {hint_bb}\n"
+                f"{ok(ema_cross_above)} EMA crossover above EMA50 — {hint_ema}\n"
+                f"{ok(bullish_candle)} Bullish candle — {hint_candle_cons}\n"
             )
         
         text = (
