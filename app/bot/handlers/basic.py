@@ -563,6 +563,8 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
         breakout_retest = False
         bb_squeeze_exp = False
         ema_cross_above = False
+        ema9_now = 0.0
+        last_candle_price = float(m15["close"].iloc[-1])
         
         if strategy_mode == "aggressive":
             # Aggressive mode: show specific trigger details
@@ -578,7 +580,7 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
             hint_cross = "Momentum shift if cross just happened" if crossover else "Wait for EMA9 crossing EMA21 up"
             hint_squeeze = "Volatility compression can precede breakout" if squeeze else "No squeeze now"
             hint_candle = "Bullish candle detected" if bullish_candle else "No bullish candle"
-            hint_price = f"Price {float(m15['close'].iloc[-1]):.4f} {'above' if price_above_ema9 else 'below'} EMA9 {ema9_now:.4f}"
+            hint_price = f"Price {last_candle_price:.4f} {'above' if price_above_ema9 else 'below'} EMA9 {ema9_now:.4f}"
             
             trigger_details = (
                 f"{ok(crossover)} EMA9/EMA21 crossover — {hint_cross}\n"
