@@ -1437,40 +1437,20 @@ async def cmd_easy_mode(message: Message, **kwargs):
         db_repo = _get_db_repo_from_kwargs(kwargs)
         settings = get_settings()
         
-        # Get current mode from database
-        current_mode_str = await db_repo.get_setting("use_easy_detector")
-        current_mode = current_mode_str == "true" if current_mode_str else False
+        # Set Easy Mode
+        await db_repo.set_strategy_mode("easy")
         
-        # Toggle easy mode
-        new_mode = not current_mode
-        
-        # Save to database
-        await db_repo.set_setting("use_easy_detector", "true" if new_mode else "false")
-        
-        # Update the global settings
-        settings.use_easy_detector = new_mode
-        
-        if new_mode:
-            await message.answer(
-                "🟢 <b>Easy Mode ENABLED</b>\n\n"
-                "Easy mode uses VERY lenient conditions:\n"
-                "• Trend filter: NONE (always pass)\n"
-                "• Entry triggers: Need ≥1 instead of ≥2\n"
-                "• Triggers: EMA crossover, price above EMA9, volume increase, any bullish candle\n\n"
-                "This should generate MANY signals for testing.\n\n"
-                "Use /force_scan to test immediately.",
-                parse_mode="HTML"
-            )
-        else:
-            await message.answer(
-                "🔴 <b>Easy Mode DISABLED</b>\n\n"
-                "Back to conservative strategy:\n"
-                "• Trend filter: Price > EMA200 (1h) AND > EMA50 (15m) AND RSI 45-65\n"
-                "• Entry triggers: Need ≥2 out of 4\n"
-                "• More strict conditions for higher quality signals\n\n"
-                "Use /force_scan to test immediately.",
-                parse_mode="HTML"
-            )
+        # Show confirmation message
+        await message.answer(
+            "🟢 <b>Easy Mode ENABLED</b>\n\n"
+            "Easy mode uses VERY lenient conditions:\n"
+            "• Trend filter: NONE (always pass)\n"
+            "• Entry triggers: Need ≥1 out of 3\n"
+            "• Triggers: EMA crossover, BB squeeze, bullish candle\n\n"
+            "This should generate MANY signals for testing.\n\n"
+            "Use /force_scan to test immediately.",
+            parse_mode="HTML"
+        )
         
     except Exception as e:
         logger.exception(f"Error in easy mode: {e}")
@@ -1611,28 +1591,36 @@ async def cmd_mode_status(message: Message, **kwargs):
         settings = get_settings()
         
         # Get current mode from database
-        current_mode_str = await db_repo.get_setting("use_easy_detector")
-        is_easy_mode = current_mode_str == "true" if current_mode_str else False
+        strategy_mode = await db_repo.get_strategy_mode()
         
-        if is_easy_mode:
+        if strategy_mode == "easy":
             mode_text = "🟢 <b>Easy Mode ACTIVE</b>"
             conditions_text = (
                 "• Trend filter: NONE (always pass)\n"
-                "• Entry triggers: Need ≥1 out of 4\n"
-                "• Triggers: EMA crossover, price above EMA9, volume increase, any bullish candle"
+                "• Entry triggers: Need ≥1 out of 3\n"
+                "• Triggers: EMA crossover, BB squeeze, bullish candle"
             )
-        else:
+        elif strategy_mode == "aggressive":
+            mode_text = "🟡 <b>Aggressive Mode ACTIVE</b>"
+            conditions_text = (
+                "• Trend filter: RSI bounce from oversold (&lt;30→≥30)\n"
+                "• Entry triggers: Need ≥3 out of 4\n"
+                "• Triggers: RSI bounce, price crosses EMA50, volume surge, trend strengthening"
+            )
+        else:  # conservative
             mode_text = "🔴 <b>Conservative Mode ACTIVE</b>"
             conditions_text = (
-                "• Trend filter: Price > EMA200 (1h) AND > EMA50 (15m) AND RSI 45-65\n"
-                "• Entry triggers: Need ≥2 out of 4\n"
-                "• Triggers: Breakout & retest, BB squeeze, EMA crossover, bullish candle"
+                "• Trend filter: Price &gt; EMA200 (1h) AND &gt; EMA50 (15m) AND RSI 45-65\n"
+                "• Entry triggers: Need ≥2 out of 3\n"
+                "• Triggers: EMA crossover, BB squeeze, bullish candle"
             )
         
         await message.answer(
             f"{mode_text}\n\n"
             f"<b>Current conditions:</b>\n{conditions_text}\n\n"
-            f"Use /easy_mode to toggle between modes.\n"
+            f"Use /conservative_mode to set Conservative\n"
+            f"Use /easy_mode to set Easy\n"
+            f"Use /aggressive_mode to set Aggressive\n\n"
             f"Use /force_scan to test current mode.",
             parse_mode="HTML"
         )
