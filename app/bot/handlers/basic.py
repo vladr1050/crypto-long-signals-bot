@@ -438,9 +438,23 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
         vol_ratio = float(last["volume"] / vol_sma.iloc[-1]) if vol_sma.iloc[-1] else 0.0
 
         ok = lambda x: '🟢' if x else '🔴'
-        hint_trend = (
-            "Above EMA200/EMA50 & RSI 45-65" if trend_ok else "Need >EMA200(1h), >EMA50(15m), RSI in 45-65"
-        )
+        
+        # Set hint_trend based on mode
+        if strategy_mode == "easy":
+            hint_trend = "Easy mode - no trend filter (Always Pass)" if trend_ok else "Easy mode - no trend filter"
+        elif strategy_mode == "aggressive":
+            if trend_ok:
+                hint_trend = "RSI bounce from oversold detected"
+            else:
+                # Show actual RSI values for debugging
+                rsi_m15 = ta.calculate_rsi(m15["close"], 14)
+                current_rsi = float(rsi_m15.iloc[-1])
+                prev_rsi = float(rsi_m15.iloc[-2])
+                hint_trend = f"Need RSI bounce (<30→≥30), current: {current_rsi:.1f}, prev: {prev_rsi:.1f}"
+        else:  # conservative
+            hint_trend = (
+                "Above EMA200/EMA50 & RSI 45-65" if trend_ok else "Need >EMA200(1h), >EMA50(15m), RSI in 45-65"
+            )
         hint_cross = "Momentum shift if cross just happened" if crossover else "Wait for EMA9 crossing EMA21 up"
         hint_squeeze = "Volatility compression can precede breakout" if squeeze else "No squeeze now"
         hint_candle = (
