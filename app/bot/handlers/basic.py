@@ -501,13 +501,13 @@ async def cmd_strategy(message: Message, **kwargs):
 <b>📈 My Trading Strategy (🟡 Aggressive Mode)</b>
 
 <b>Trend Filter:</b>
-• RSI bounce from oversold (< 30 then >= 30)
+• RSI bounce from oversold (&lt; 30 then &gt;= 30)
 
 <b>Entry Triggers (Need ALL 3):</b>
 • RSI bounce from oversold
 • EMA crossover (price crosses EMA50 from below)
 • Volume surge (≥1.5x average over 20 candles)
-• Trend strengthening (EMA20 > EMA50)
+• Trend strengthening (EMA20 &gt; EMA50)
 
 <b>Risk Management:</b>
 • Stop Loss: Technical analysis (support/ATR)
@@ -730,13 +730,13 @@ async def callback_show_strategy(callback: CallbackQuery, **kwargs):
 <b>📈 My Trading Strategy (🟡 Aggressive Mode)</b>
 
 <b>Trend Filter:</b>
-• RSI bounce from oversold (< 30 then >= 30)
+• RSI bounce from oversold (&lt; 30 then &gt;= 30)
 
 <b>Entry Triggers (Need ALL 3):</b>
 • RSI bounce from oversold
 • EMA crossover (price crosses EMA50 from below)
 • Volume surge (≥1.5x average over 20 candles)
-• Trend strengthening (EMA20 > EMA50)
+• Trend strengthening (EMA20 &gt; EMA50)
 
 <b>Risk Management:</b>
 • Stop Loss: Technical analysis (support/ATR)
@@ -1376,7 +1376,7 @@ async def cmd_aggressive_mode(message: Message, **kwargs):
         await message.answer(
             "🟡 <b>Aggressive Mode ENABLED</b>\n\n"
             "Aggressive bounce strategy:\n"
-            "• Trend filter: RSI bounce from oversold (< 30 then >= 30)\n"
+            "• Trend filter: RSI bounce from oversold (&lt; 30 then &gt;= 30)\n"
             "• Entry triggers: Need ALL 3 - RSI bounce + EMA crossover + Volume surge\n"
             "• Philosophy: Buy the dip, catch oversold bounces\n"
             "• Quality: Higher risk, reversal signals\n"
