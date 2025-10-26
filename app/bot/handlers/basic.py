@@ -49,7 +49,10 @@ class PairState(StatesGroup):
 
 
 def _get_db_repo_from_kwargs(kwargs):
-    return kwargs.get("db_repo")
+    db_repo = kwargs.get("db_repo")
+    if db_repo is None:
+        logger.error("db_repo is None! Keys in kwargs: " + str(list(kwargs.keys())))
+    return db_repo
 
 
 @router.message(CommandStart())
@@ -192,6 +195,12 @@ async def cmd_check(message: Message, **kwargs):
     """Start interactive check: pick a pair to analyze now."""
     try:
         db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        if db_repo is None:
+            logger.error("db_repo is None in /check command!")
+            await message.answer("❌ Database error. Please try again later.")
+            return
+        
         pairs = await db_repo.get_enabled_pairs()
         if not pairs:
             await message.answer("No enabled pairs.")
@@ -330,8 +339,7 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
         rm = RiskManager()
 
         # Check current mode
-        easy_mode_str = await db_repo.get_setting("use_easy_detector")
-        use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+        strategy_mode = await db_repo.get_strategy_mode()
 
         # Fetch data
         h1 = await mds.get_ohlcv(symbol, "1h", 200)
@@ -350,9 +358,15 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
         price_m15 = float(m15["close"].iloc[-1])
 
         # Apply trend filter based on current mode
-        if use_easy_detector:
+        if strategy_mode == "easy":
             trend_ok = True  # Easy mode: no trend filter
-        else:
+        elif strategy_mode == "aggressive":
+            # Aggressive mode: RSI bounce from oversold
+            rsi_m15 = ta.calculate_rsi(m15["close"], 14)
+            current_rsi = float(rsi_m15.iloc[-1])
+            prev_rsi = float(rsi_m15.iloc[-2])
+            trend_ok = prev_rsi < 30 and current_rsi >= 30  # RSI bounce from oversold
+        else:  # conservative
             trend_ok = price_h1 > ema200_h1 and price_m15 > ema50_m15 and 45 <= rsi_h1 <= 65
 
         # Entry triggers (sample): EMA9>EMA21 cross on 15m, BB squeeze breakout, bullish engulfing
@@ -389,18 +403,29 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
 
         reasons = []
         if not trend_ok:
-            if not use_easy_detector:  # Only show trend reasons in conservative mode
-                if price_h1 <= ema200_h1:
-                    reasons.append("Price below EMA200 (1h)")
-                if price_m15 <= ema50_m15:
-                    reasons.append("Price below EMA50 (15m)")
-                if not (45 <= rsi_h1 <= 65):
-                    reasons.append(f"RSI(14,1h) {rsi_h1:.1f} not in 45-65")
+            if strategy_mode != "easy":  # Only show trend reasons in conservative and aggressive modes
+                if strategy_mode == "conservative":
+                    if price_h1 <= ema200_h1:
+                        reasons.append("Price below EMA200 (1h)")
+                    if price_m15 <= ema50_m15:
+                        reasons.append("Price below EMA50 (15m)")
+                    if not (45 <= rsi_h1 <= 65):
+                        reasons.append(f"RSI(14,1h) {rsi_h1:.1f} not in 45-65")
+                elif strategy_mode == "aggressive":
+                    reasons.append("No RSI bounce from oversold detected")
         
         # Check trigger requirements based on mode
-        required_triggers = 1 if use_easy_detector else 2
+        if strategy_mode == "easy":
+            required_triggers = 1
+            mode_text = "Easy Mode"
+        elif strategy_mode == "aggressive":
+            required_triggers = 3
+            mode_text = "Aggressive Mode"
+        else:  # conservative
+            required_triggers = 2
+            mode_text = "Conservative Mode"
+        
         if len(triggers_hit) < required_triggers:
-            mode_text = "Easy Mode" if use_easy_detector else "Conservative Mode"
             reasons.append(f"Only {len(triggers_hit)} entry trigger(s) hit (need ≥{required_triggers} for {mode_text})")
 
         # Compose text
@@ -541,6 +566,11 @@ async def cmd_status(message: Message, **kwargs):
         # Get database repository
         db_repo = _get_db_repo_from_kwargs(kwargs)
         
+        if db_repo is None:
+            logger.error("db_repo is None in /status command!")
+            await message.answer("❌ Database error. Please try again later.")
+            return
+        
         # Get user info
         user = await db_repo.get_or_create_user(message.from_user.id)
         
@@ -554,10 +584,17 @@ async def cmd_status(message: Message, **kwargs):
         user_active_signals = await db_repo.get_user_active_signals_count(user.tg_id)
         
         # Get current mode
-        easy_mode_str = await db_repo.get_setting("use_easy_detector")
-        use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
-        mode_icon = "🟢" if use_easy_detector else "🔴"
-        mode_text = "Easy Mode" if use_easy_detector else "Conservative Mode"
+        strategy_mode = await db_repo.get_strategy_mode()
+        
+        if strategy_mode == "easy":
+            mode_icon = "🟢"
+            mode_text = "Easy Mode"
+        elif strategy_mode == "aggressive":
+            mode_icon = "🟡"
+            mode_text = "Aggressive Mode"
+        else:  # conservative (default)
+            mode_icon = "🔴"
+            mode_text = "Conservative Mode"
         
         # Build status message
         status_text = STATUS_HEADER
@@ -783,10 +820,17 @@ async def callback_show_status(callback: CallbackQuery, **kwargs):
         signals_count = await db_repo.get_signals_count()
         
         # Get current mode
-        easy_mode_str = await db_repo.get_setting("use_easy_detector")
-        use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
-        mode_icon = "🟢" if use_easy_detector else "🔴"
-        mode_text = "Easy Mode" if use_easy_detector else "Conservative Mode"
+        strategy_mode = await db_repo.get_strategy_mode()
+        
+        if strategy_mode == "easy":
+            mode_icon = "🟢"
+            mode_text = "Easy Mode"
+        elif strategy_mode == "aggressive":
+            mode_icon = "🟡"
+            mode_text = "Aggressive Mode"
+        else:  # conservative (default)
+            mode_icon = "🔴"
+            mode_text = "Conservative Mode"
         
         # Build status message
         status_text = STATUS_HEADER
@@ -1006,6 +1050,12 @@ async def cmd_debug_scanner(message: Message, **kwargs):
     """Handle /debug_scanner command to diagnose scanner issues"""
     try:
         db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        if db_repo is None:
+            logger.error("db_repo is None in /debug_scanner command!")
+            await message.answer("❌ Database error. Please try again later.")
+            return
+        
         settings = get_settings()
         enabled_pairs = await db_repo.get_enabled_pairs()
         
@@ -1053,12 +1103,21 @@ async def cmd_debug_scanner(message: Message, **kwargs):
                 ta = TechnicalAnalysis()
                 
                 # Check current mode
-                easy_mode_str = await db_repo.get_setting("use_easy_detector")
-                use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+                strategy_mode = await db_repo.get_strategy_mode()
                 
-                debug_text += f"  <b>Detection Mode:</b> {'🟢 Easy Mode' if use_easy_detector else '🔴 Conservative Mode'}\n"
+                if strategy_mode == "easy":
+                    mode_icon = "🟢"
+                    mode_text = "Easy Mode"
+                elif strategy_mode == "aggressive":
+                    mode_icon = "🟡"
+                    mode_text = "Aggressive Mode"
+                else:  # conservative (default)
+                    mode_icon = "🔴"
+                    mode_text = "Conservative Mode"
                 
-                if use_easy_detector:
+                debug_text += f"  <b>Detection Mode:</b> {mode_icon} {mode_text}\n"
+                
+                if strategy_mode == "easy":
                     # Easy mode: no trend filter
                     debug_text += f"  Trend Filter: ✅ (Easy Mode - Always Pass)\n"
                     trend_filter_ok = True
@@ -1115,7 +1174,7 @@ async def cmd_debug_scanner(message: Message, **kwargs):
                         triggers.append("bullish_candle")
                     
                     # 4. Price above EMA9 (Easy Mode specific)
-                    if use_easy_detector:
+                    if strategy_mode == "easy":
                         price_above_ema9 = float(entry_df["close"].iloc[-1]) > ema9_now
                         if price_above_ema9:
                             triggers.append("price_above_ema9")
@@ -1124,12 +1183,15 @@ async def cmd_debug_scanner(message: Message, **kwargs):
                     debug_text += f"    - EMA Crossover: {'✅' if crossover else '❌'}\n"
                     debug_text += f"    - BB Squeeze: {'✅' if squeeze else '❌'}\n"
                     debug_text += f"    - Bullish Candle: {'✅' if bullish_candle else '❌'}\n"
-                    if use_easy_detector:
+                    if strategy_mode == "easy":
                         debug_text += f"    - Price above EMA9: {'✅' if price_above_ema9 else '❌'}\n"
                     
-                    if use_easy_detector:
+                    if strategy_mode == "easy":
                         triggers_ok = len(triggers) >= 1  # Easy mode needs only 1 trigger
                         debug_text += f"  <b>Triggers Result:</b> {'✅ PASS' if triggers_ok else '❌ FAIL'} (Easy Mode: need ≥1)\n\n"
+                    elif strategy_mode == "aggressive":
+                        triggers_ok = len(triggers) >= 3  # Aggressive mode needs 3 triggers
+                        debug_text += f"  <b>Triggers Result:</b> {'✅ PASS' if triggers_ok else '❌ FAIL'} (Aggressive Mode: need ≥3)\n\n"
                     else:
                         triggers_ok = len(triggers) >= 2  # Conservative mode needs 2 triggers
                         debug_text += f"  <b>Triggers Result:</b> {'✅ PASS' if triggers_ok else '❌ FAIL'} (Conservative Mode: need ≥2)\n\n"
@@ -1137,8 +1199,10 @@ async def cmd_debug_scanner(message: Message, **kwargs):
                     if triggers_ok:
                         debug_text += f"  <b>🎯 SIGNAL WOULD BE GENERATED!</b>\n"
                     else:
-                        if use_easy_detector:
+                        if strategy_mode == "easy":
                             debug_text += f"  <b>❌ No signal: Need ≥1 trigger (Easy Mode)</b>\n"
+                        elif strategy_mode == "aggressive":
+                            debug_text += f"  <b>❌ No signal: Need ≥3 triggers (Aggressive Mode)</b>\n"
                         else:
                             debug_text += f"  <b>❌ No signal: Need ≥2 triggers (Conservative Mode)</b>\n"
                 else:
@@ -1163,6 +1227,11 @@ async def cmd_force_scan(message: Message, **kwargs):
     """Handle /force_scan command to force immediate market scan"""
     try:
         db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        if db_repo is None:
+            logger.error("db_repo is None in /force_scan command!")
+            await message.answer("❌ Database error. Please try again later.")
+            return
         
         # Get scanner from main app (we'll need to pass it via middleware)
         # For now, let's create a simple scan
@@ -1199,15 +1268,18 @@ async def cmd_force_scan(message: Message, **kwargs):
         
         # Use appropriate detector based on database setting
         from app.core.signals.easy_detector import EasySignalDetector
+        from app.core.signals.aggressive_detector import AggressiveSignalDetector
         
         # Check database for current mode
-        easy_mode_str = await db_repo.get_setting("use_easy_detector")
-        use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+        strategy_mode = await db_repo.get_strategy_mode()
         
-        if use_easy_detector:
+        if strategy_mode == "easy":
             detector = EasySignalDetector(ta, rm)
             logger.info("Force scan using EasySignalDetector")
-        else:
+        elif strategy_mode == "aggressive":
+            detector = AggressiveSignalDetector(settings)
+            logger.info("Force scan using AggressiveSignalDetector")
+        else:  # conservative (default)
             from app.core.signals.detector import SignalDetector
             detector = SignalDetector(ta, rm)
             logger.info("Force scan using SignalDetector")
