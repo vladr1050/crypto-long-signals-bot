@@ -13,6 +13,7 @@ from app.config.settings import get_settings
 from app.core.data.market import MarketDataService
 from app.core.signals.detector import SignalDetector
 from app.core.signals.easy_detector import EasySignalDetector
+from app.core.signals.aggressive_detector import AggressiveSignalDetector
 from app.services.notifier import NotificationService
 
 logger = logging.getLogger(__name__)
@@ -35,12 +36,13 @@ class MarketScanner:
         self.notifier = notifier
         self.settings = settings
         
-        # Add easy detector for testing
+        # Add detectors for different strategies
         from app.core.indicators.ta import TechnicalAnalysis
         from app.core.risk.sizing import RiskManager
         ta = TechnicalAnalysis()
         risk_manager = RiskManager()
         self.easy_detector = EasySignalDetector(ta, risk_manager)
+        self.aggressive_detector = AggressiveSignalDetector(settings)
         
         # Initialize scheduler
         self.scheduler = AsyncIOScheduler()
@@ -136,10 +138,8 @@ class MarketScanner:
             logger.info(f"Fetching data for {len(symbols)} symbols")
             market_data = await self.market_data.get_multiple_ohlcv(symbols, timeframes)
             
-            # Detect signals using appropriate detector
-            # Check database for current mode
-            easy_mode_str = await self.db_repo.get_setting("use_easy_detector")
-            use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+            # Detect signals using appropriate detector based on strategy mode
+            strategy_mode = await self.db_repo.get_strategy_mode()
             
             # Get all users who want signals
             users = await self.db_repo.get_users_with_signals_enabled()
@@ -153,10 +153,15 @@ class MarketScanner:
                 logger.info("No users found")
                 return
             
-            # Detect signals
-            if use_easy_detector:
+            # Detect signals based on strategy mode
+            if strategy_mode == "easy":
+                logger.info("Using Easy Signal Detector")
                 signals = self.easy_detector.detect_signals(market_data, first_user.risk_pct)
-            else:
+            elif strategy_mode == "aggressive":
+                logger.info("Using Aggressive Signal Detector")
+                signals = self.aggressive_detector.detect_signals(market_data, first_user.risk_pct)
+            else:  # conservative (default)
+                logger.info("Using Conservative Signal Detector")
                 signals = self.signal_detector.detect_signals(market_data, first_user.risk_pct)
             
             if signals:

@@ -1250,6 +1250,98 @@ async def cmd_easy_mode(message: Message, **kwargs):
         await message.answer(f"❌ Easy mode error: {str(e)}")
 
 
+@router.message(Command("strategy_mode"))
+async def cmd_strategy_mode(message: Message, **kwargs):
+    """Handle /strategy_mode command to select strategy"""
+    try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        current_mode = await db_repo.get_strategy_mode()
+        
+        mode_info = {
+            "conservative": "🔴 <b>Conservative Mode</b>\n\n"
+                          "• Trend filter: Price > EMA200 (1h) AND > EMA50 (15m) AND RSI 45-65\n"
+                          "• Entry triggers: Need ≥2 out of 4\n"
+                          "• Quality: Highest quality signals\n"
+                          "• Risk: Lower risk, rare signals",
+            
+            "easy": "🟢 <b>Easy Mode</b>\n\n"
+                    "• Trend filter: NONE (always pass)\n"
+                    "• Entry triggers: Need ≥1 out of 4\n"
+                    "• Quality: Medium quality, more signals\n"
+                    "• Risk: Moderate risk, frequent signals",
+            
+            "aggressive": "🟡 <b>Aggressive Mode</b>\n\n"
+                          "• Trend filter: RSI bounce from oversold\n"
+                          "• Entry triggers: RSI bounce + EMA crossover + Volume surge (all 3 required)\n"
+                          "• Quality: High-risk bounce signals\n"
+                          "• Risk: Higher risk, reversal signals\n"
+                          "• Philosophy: Buy the dip, catch oversold bounces"
+        }
+        
+        text = f"{mode_info.get(current_mode, mode_info['conservative'])}\n\n"
+        text += f"<b>Current mode:</b> {current_mode}\n\n"
+        text += "<b>Select strategy mode:</b>\n"
+        text += "/conservative_mode - Conservative strategy\n"
+        text += "/easy_mode - Easy testing strategy\n"
+        text += "/aggressive_mode - Aggressive bounce strategy"
+        
+        await message.answer(text, parse_mode="HTML")
+        
+    except Exception as e:
+        logger.exception(f"Error in strategy_mode command: {e}")
+        await message.answer("❌ Error getting strategy mode")
+
+
+@router.message(Command("conservative_mode"))
+async def cmd_conservative_mode(message: Message, **kwargs):
+    """Handle /conservative_mode command"""
+    try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        await db_repo.set_strategy_mode("conservative")
+        
+        await message.answer(
+            "🔴 <b>Conservative Mode ENABLED</b>\n\n"
+            "Conservative strategy uses the strictest conditions:\n"
+            "• Trend filter: Price > EMA200 (1h) AND > EMA50 (15m) AND RSI 45-65\n"
+            "• Entry triggers: Need ≥2 out of 4\n"
+            "• Quality: Highest quality signals\n"
+            "• Risk: Lower risk, rare signals\n\n"
+            "Use /force_scan to test immediately.",
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        logger.exception(f"Error in conservative_mode command: {e}")
+        await message.answer("❌ Error setting conservative mode")
+
+
+@router.message(Command("aggressive_mode"))
+async def cmd_aggressive_mode(message: Message, **kwargs):
+    """Handle /aggressive_mode command"""
+    try:
+        db_repo = _get_db_repo_from_kwargs(kwargs)
+        
+        await db_repo.set_strategy_mode("aggressive")
+        
+        await message.answer(
+            "🟡 <b>Aggressive Mode ENABLED</b>\n\n"
+            "Aggressive bounce strategy:\n"
+            "• Trend filter: RSI bounce from oversold (< 30 then >= 30)\n"
+            "• Entry triggers: Need ALL 3 - RSI bounce + EMA crossover + Volume surge\n"
+            "• Philosophy: Buy the dip, catch oversold bounces\n"
+            "• Quality: Higher risk, reversal signals\n"
+            "• Max hold: 18 hours\n\n"
+            "Use /force_scan to test immediately.",
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        logger.exception(f"Error in aggressive_mode command: {e}")
+        await message.answer("❌ Error setting aggressive mode")
+
+
 @router.message(Command("my_signals"))
 async def cmd_my_signals(message: Message, **kwargs):
     """Handle /my_signals command to show user's active signals"""

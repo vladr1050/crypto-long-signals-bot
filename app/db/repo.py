@@ -259,6 +259,53 @@ class DatabaseRepository:
             logger.error(f"Error getting users with signals enabled: {e}")
             return []
     
+    async def get_strategy_mode(self) -> str:
+        """
+        Get current strategy mode
+        
+        Returns:
+            'conservative', 'easy', or 'aggressive'
+        """
+        try:
+            # Check for use_easy_detector setting (legacy)
+            easy_mode_str = await self.get_setting("use_easy_detector")
+            if easy_mode_str and easy_mode_str == "true":
+                return "easy"
+            
+            # Check for current strategy mode
+            strategy_mode = await self.get_setting("strategy_mode")
+            if strategy_mode:
+                return strategy_mode
+            
+            # Default to conservative
+            return "conservative"
+        except Exception as e:
+            logger.error(f"Error getting strategy mode: {e}")
+            return "conservative"
+    
+    async def set_strategy_mode(self, mode: str) -> bool:
+        """
+        Set current strategy mode
+        
+        Args:
+            mode: 'conservative', 'easy', or 'aggressive'
+        """
+        try:
+            # Update strategy_mode setting
+            await self.set_setting("strategy_mode", mode)
+            
+            # Update legacy use_easy_detector for backwards compatibility
+            if mode == "easy":
+                await self.set_setting("use_easy_detector", "true")
+            else:
+                await self.set_setting("use_easy_detector", "false")
+            
+            logger.info(f"Strategy mode set to: {mode}")
+            return True
+        except Exception as e:
+            logger.error(f"Error setting strategy mode: {e}")
+            return False
+    
     async def get_signal_by_id(self, signal_id: int) -> Optional[Signal]:
         """Get signal by ID"""
         try:
