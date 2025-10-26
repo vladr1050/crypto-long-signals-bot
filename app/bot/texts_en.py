@@ -19,6 +19,12 @@ I help you find high-probability <b>LONG</b> signals in crypto markets.
 2. I'll send you signals when I find good setups
 3. Use /pairs to manage which pairs to monitor
 4. Use /risk to adjust your risk per trade
+5. Use /strategy_mode to switch between strategies
+
+<b>Strategy Modes:</b>
+• Conservative (default) - Strict conditions, rare quality signals
+• Easy - Lenient conditions, frequent testing signals  
+• Aggressive - Bounce strategy, RSI oversold reversals
 
 <b>Commands:</b>
 /start - Welcome message
@@ -28,6 +34,7 @@ I help you find high-probability <b>LONG</b> signals in crypto markets.
 /signals_off - Pause signals
 /status - Show current status
 /strategy - Explain my strategy
+/strategy_mode - Switch strategy modes
 /help - FAQ and disclaimer
 
 ⚠️ <b>Disclaimer:</b> This is for educational purposes only. Not financial advice. Trade at your own risk.
@@ -57,15 +64,20 @@ Use /risk command. Default is 0.7% per trade.
 • B (Good): Decent setup, average confirmation
 • C (High-risk): Weak confirmation, use smaller position
 
-        <b>New diagnostic commands</b>
+        <b>Strategy Commands:</b>
+        • /strategy_mode — view current strategy and switch modes
+        • /conservative_mode — enable conservative strategy (default)
+        • /easy_mode — enable easy testing strategy
+        • /aggressive_mode — enable aggressive bounce strategy
+        
+        <b>Diagnostic Commands:</b>
         • /health — quick health check (DB + exchange reachability)
         • /mock_signal — send a test signal to yourself (delivery check)
-        • /check — pick a pair and get a current status: trend filter, entry triggers and explanation why it's not a long now (if conditions are not met)
-        • /debug_scanner — detailed scanner diagnostics (pairs, signals, detection logic)
-        • /force_scan — force immediate market scan to test signal detection
-        • /easy_mode — toggle between conservative and easy signal detection modes
+        • /check — pick a pair and get current status and triggers
+        • /debug_scanner — detailed scanner diagnostics
+        • /force_scan — force immediate market scan
         • /mode_status — check current detection mode and conditions
-        • /my_signals — show your active signals (marked with "Mark Active" button)
+        • /my_signals — show your active signals
 
 <b>⚠️ Important Disclaimers:</b>
 • This is NOT financial advice

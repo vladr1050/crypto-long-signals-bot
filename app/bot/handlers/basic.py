@@ -466,11 +466,10 @@ async def cmd_strategy(message: Message, **kwargs):
     try:
         db_repo = _get_db_repo_from_kwargs(kwargs)
         
-        # Get current mode from database
-        easy_mode_str = await db_repo.get_setting("use_easy_detector")
-        use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+        # Get current strategy mode
+        strategy_mode = await db_repo.get_strategy_mode()
         
-        if use_easy_detector:
+        if strategy_mode == "easy":
             strategy_text = """
 <b>📈 My Trading Strategy (🟢 Easy Mode)</b>
 
@@ -480,14 +479,14 @@ async def cmd_strategy(message: Message, **kwargs):
 <b>Entry Triggers (Need ≥1):</b>
 • EMA9/EMA21 bullish crossover
 • Price above EMA9
-• Volume increase
+• BB squeeze
 • Any bullish candle pattern
 
 <b>Risk Management:</b>
-• Stop Loss: Technical analysis (support/ATR)
+• Stop Loss: Technical analysis (support/ATR, min 0.5%)
 • Take Profit: Technical analysis (resistance/ATR)
 • Risk per trade: User-defined (adjustable)
-• Max concurrent signals: 3
+• Max signals: Unlimited
 • Max holding time: 24 hours
 
 <b>Signal Grading:</b>
@@ -497,7 +496,32 @@ async def cmd_strategy(message: Message, **kwargs):
 
 <b>Note:</b> Easy Mode generates more signals for testing purposes.
             """
-        else:
+        elif strategy_mode == "aggressive":
+            strategy_text = """
+<b>📈 My Trading Strategy (🟡 Aggressive Mode)</b>
+
+<b>Trend Filter:</b>
+• RSI bounce from oversold (< 30 then >= 30)
+
+<b>Entry Triggers (Need ALL 3):</b>
+• RSI bounce from oversold
+• EMA crossover (price crosses EMA50 from below)
+• Volume surge (≥1.5x average over 20 candles)
+• Trend strengthening (EMA20 > EMA50)
+
+<b>Risk Management:</b>
+• Stop Loss: Technical analysis (support/ATR)
+• Take Profit: Technical analysis (resistance/ATR)
+• Risk per trade: User-defined
+• Max signals: Unlimited
+• Max holding time: 18 hours
+
+<b>Signal Grading:</b>
+• Always C grade (high risk, bounce signals)
+
+<b>Philosophy:</b> Buy the dip, catch oversold bounces. Higher risk, reversal signals.
+            """
+        else:  # conservative
             strategy_text = STRATEGY_MESSAGE
         
         await message.answer(
@@ -671,11 +695,10 @@ async def callback_show_strategy(callback: CallbackQuery, **kwargs):
     try:
         db_repo = _get_db_repo_from_kwargs(kwargs)
         
-        # Get current mode from database
-        easy_mode_str = await db_repo.get_setting("use_easy_detector")
-        use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+        # Get current strategy mode
+        strategy_mode = await db_repo.get_strategy_mode()
         
-        if use_easy_detector:
+        if strategy_mode == "easy":
             strategy_text = """
 <b>📈 My Trading Strategy (🟢 Easy Mode)</b>
 
@@ -684,15 +707,15 @@ async def callback_show_strategy(callback: CallbackQuery, **kwargs):
 
 <b>Entry Triggers (Need ≥1):</b>
 • EMA9/EMA21 bullish crossover
-• Price above EMA9
-• Volume increase
+• BB squeeze
 • Any bullish candle pattern
+• Price above EMA9
 
 <b>Risk Management:</b>
-• Stop Loss: Technical analysis (support/ATR)
+• Stop Loss: Technical analysis (support/ATR, min 0.5%)
 • Take Profit: Technical analysis (resistance/ATR)
 • Risk per trade: User-defined (adjustable)
-• Max concurrent signals: 3
+• Max signals: Unlimited
 • Max holding time: 24 hours
 
 <b>Signal Grading:</b>
@@ -702,7 +725,32 @@ async def callback_show_strategy(callback: CallbackQuery, **kwargs):
 
 <b>Note:</b> Easy Mode generates more signals for testing purposes.
             """
-        else:
+        elif strategy_mode == "aggressive":
+            strategy_text = """
+<b>📈 My Trading Strategy (🟡 Aggressive Mode)</b>
+
+<b>Trend Filter:</b>
+• RSI bounce from oversold (< 30 then >= 30)
+
+<b>Entry Triggers (Need ALL 3):</b>
+• RSI bounce from oversold
+• EMA crossover (price crosses EMA50 from below)
+• Volume surge (≥1.5x average over 20 candles)
+• Trend strengthening (EMA20 > EMA50)
+
+<b>Risk Management:</b>
+• Stop Loss: Technical analysis (support/ATR)
+• Take Profit: Technical analysis (resistance/ATR)
+• Risk per trade: User-defined
+• Max signals: Unlimited
+• Max holding time: 18 hours
+
+<b>Signal Grading:</b>
+• Always C grade (high risk, bounce signals)
+
+<b>Philosophy:</b> Buy the dip, catch oversold bounces. Higher risk, reversal signals.
+            """
+        else:  # conservative
             strategy_text = STRATEGY_MESSAGE
         
         await safe_edit(
