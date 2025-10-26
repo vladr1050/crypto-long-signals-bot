@@ -491,11 +491,6 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
             hint_trend = (
                 "Above EMA200/EMA50 & RSI 45-65" if trend_ok else "Need >EMA200(1h), >EMA50(15m), RSI in 45-65"
             )
-        hint_cross = "Momentum shift if cross just happened" if crossover else "Wait for EMA9 crossing EMA21 up"
-        hint_squeeze = "Volatility compression can precede breakout" if squeeze else "No squeeze now"
-        hint_candle = (
-            "Demand signal on candle" if bullish_engulf or lower_wick_ratio >= 2.0 else "No bullish candle pattern"
-        )
 
         # Set mode icon and text based on strategy mode
         if strategy_mode == "easy":
