@@ -435,10 +435,13 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
             upper_wick = float((last["high"] - last["close"]) if last["close"] > last["open"] else (last["high"] - last["open"]))
             lower_wick_ratio = (lower_wick / body) if body > 0 else 0.0
 
+            # Check if lower wick is bullish (long lower wick = demand)
+            bullish_candle = bullish_engulf or lower_wick_ratio >= 2.0
+            
             triggers = [
                 ("EMA9>EMA21 cross", crossover),
                 ("BB squeeze", squeeze),
-                ("Bullish engulfing", bullish_engulf),
+                ("Bullish candle", bullish_candle),
             ]
             triggers_hit = [name for name, ok in triggers if ok]
             required_triggers = 1 if strategy_mode == "easy" else 2
