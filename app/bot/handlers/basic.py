@@ -145,8 +145,7 @@ async def cmd_mock_real(message: Message, **kwargs):
         symbol = pairs[0].symbol
 
         # Check current mode
-        easy_mode_str = await db_repo.get_setting("use_easy_detector")
-        use_easy_detector = easy_mode_str == "true" if easy_mode_str else False
+        strategy_mode = await db_repo.get_strategy_mode()
 
         mds = MarketDataService()
         ta = TechnicalAnalysis()
@@ -166,7 +165,12 @@ async def cmd_mock_real(message: Message, **kwargs):
         # Position estimate for demo: assume $10,000 account
         position = rm.calculate_max_position_value(10000.0, user.risk_pct, price, sl)
 
-        mode_text = "Easy Mode" if use_easy_detector else "Conservative Mode"
+        if strategy_mode == "easy":
+            mode_text = "Easy Mode"
+        elif strategy_mode == "aggressive":
+            mode_text = "Aggressive Mode"
+        else:  # conservative (default)
+            mode_text = "Conservative Mode"
         mock = {
             "id": 0,
             "symbol": symbol,
@@ -443,11 +447,19 @@ async def callback_check_pair(callback: CallbackQuery, **kwargs):
             "Demand signal on candle" if bullish_engulf or lower_wick_ratio >= 2.0 else "No bullish candle pattern"
         )
 
-        mode_icon = "🟢" if use_easy_detector else "🔴"
-        mode_text = "Easy Mode" if use_easy_detector else "Conservative Mode"
+        # Set mode icon and text based on strategy mode
+        if strategy_mode == "easy":
+            mode_icon = "🟢"
+            mode_text_display = "Easy Mode"
+        elif strategy_mode == "aggressive":
+            mode_icon = "🟡"
+            mode_text_display = "Aggressive Mode"
+        else:  # conservative (default)
+            mode_icon = "🔴"
+            mode_text_display = "Conservative Mode"
         
         text = (
-            f"📈 <b>{symbol}</b> status ({mode_icon} {mode_text})\n"
+            f"📈 <b>{symbol}</b> status ({mode_icon} {mode_text_display})\n"
             f"Price (1h): {price_h1:.4f}, EMA200: {ema200_h1:.4f}, RSI14: {rsi_h1:.1f}\n"
             f"Price (15m): {price_m15:.4f}, EMA50: {ema50_m15:.4f}\n"
             f"Trend filter: {ok(trend_ok)} {hint_trend}\n\n"
